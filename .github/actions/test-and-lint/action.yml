@@ -1,0 +1,81 @@
+name: "Test and Lint"
+description: "Run tests and linting checks generically"
+
+inputs:
+  coverage:
+    description: "Whether to generate coverage reports"
+    required: false
+    default: "false"
+  node-version:
+    description: "Node.js version to use"
+    required: false
+    default: "20"
+  lint-command:
+    description: "NPM script command for linting"
+    required: false
+    default: "npm run lint:ci"
+  test-command:
+    description: "NPM script command for testing without coverage"
+    required: false
+    default: "npm run test"
+  test-cov-command:
+    description: "NPM script command for testing with coverage"
+    required: false
+    default: "npm run test:cov"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: "npm"
+
+    - name: Cache Vite/Vitest
+      uses: actions/cache@v4
+      with:
+        path: |
+          node_modules/.vite
+          node_modules/.cache
+        key: ${{ runner.os }}-vite-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-vite-
+
+    - name: Install dependencies
+      run: npm ci
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+
+    - name: Run linting and tests in parallel
+      run: |
+        # Start linting in background
+        ${{ inputs.lint-command }} &
+        LINT_PID=$!
+        
+        # Start tests in background (with or without coverage)
+        if [ "${{ inputs.coverage }}" = "true" ]; then
+          ${{ inputs.test-cov-command }} &
+        else
+          ${{ inputs.test-command }} &
+        fi
+        TEST_PID=$!
+        
+        # Wait for both processes and capture exit codes
+        wait $LINT_PID
+        LINT_EXIT=$?
+        
+        wait $TEST_PID
+        TEST_EXIT=$?
+        
+        # Check if either failed
+        if [ $LINT_EXIT -ne 0 ] || [ $TEST_EXIT -ne 0 ]; then
+          echo "❌ One or more checks failed:"
+          [ $LINT_EXIT -ne 0 ] && echo "  - Linting failed (exit code: $LINT_EXIT)"
+          [ $TEST_EXIT -ne 0 ] && echo "  - Tests failed (exit code: $TEST_EXIT)"
+          exit 1
+        fi
+        
+        echo "✅ All checks passed successfully!"
+      shell: bash

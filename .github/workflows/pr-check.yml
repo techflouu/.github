@@ -1,0 +1,142 @@
+name: PR Check Workflow
+
+on:
+  workflow_call:
+    inputs:
+      target-env:
+        description: "Target environment for config generation"
+        required: false
+        type: string
+        default: "stg"
+      node-version:
+        description: "Node.js version to use"
+        required: false
+        type: string
+        default: "20"
+      lint-command:
+        description: "NPM script command for linting"
+        required: false
+        type: string
+        default: "npm run lint:ci"
+      test-command:
+        description: "NPM script command for testing without coverage"
+        required: false
+        type: string
+        default: "npm run test"
+      test-cov-command:
+        description: "NPM script command for testing with coverage"
+        required: false
+        type: string
+        default: "npm run test:cov"
+    secrets:
+      TS_AUTHKEY:
+        required: true
+      VAULT_ADDR:
+        required: true
+      VAULT_ROLE:
+        required: true
+
+jobs:
+  prepare-env:
+    name: Prepare Environment
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - name: Run Release Action
+        id: release
+        uses: ./.github-shared/actions/release
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Run Read Secrets Action
+        id: read-secrets
+        uses: ./.github-shared/actions/read-secrets
+        with:
+          target: ${{ inputs.target-env }}
+          release-tag: ${{ steps.release.outputs.version }}
+          ts-oauth-secret: ${{ secrets.TS_AUTHKEY }}
+          vault-addr: ${{ secrets.VAULT_ADDR }}
+          vault-role: ${{ secrets.VAULT_ROLE }}
+
+      - name: Upload config files
+        uses: actions/upload-artifact@v4
+        with:
+          name: config-files-${{ inputs.target-env }}
+          path: ${{ steps.read-secrets.outputs.generated-config-path }}
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 1
+
+  test-and-lint:
+    name: Test and Lint
+    runs-on: ubuntu-latest
+    needs: prepare-env
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure config files
+        uses: ./.github-shared/actions/ensure-config-files
+        with:
+          target: ${{ inputs.target-env }}
+          artifact-name: config-files-${{ inputs.target-env }}
+
+      - name: Check Commit Prefix
+        id: check-prefix
+        run: |
+          TITLE="${{ github.event.pull_request.title }}"
+          if [[ "$TITLE" =~ ^(feat|fix|perf|revert|major): ]]; then
+            echo "run_coverage=true" >> $GITHUB_OUTPUT
+            echo "Commit matches primary semantic traits. Enabling coverage."
+          else
+            echo "run_coverage=false" >> $GITHUB_OUTPUT
+            echo "Commit is a minor chore or doc update. Skipping coverage."
+          fi
+
+      - name: Test and Lint
+        uses: ./.github-shared/actions/test-and-lint
+        with:
+          coverage: ${{ steps.check-prefix.outputs.run_coverage }}
+          node-version: ${{ inputs.node-version }}
+          lint-command: ${{ inputs.lint-command }}
+          test-command: ${{ inputs.test-command }}
+          test-cov-command: ${{ inputs.test-cov-command }}
+
+      - name: Upload coverage report
+        if: always() && steps.check-prefix.outputs.run_coverage == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage/coverage-summary.json
+            coverage/coverage-final.json
+          retention-days: 3
+
+      - name: Fetch base branch coverage
+        if: always() && steps.check-prefix.outputs.run_coverage == 'true'
+        run: |
+          mkdir -p coverage-base
+          if git fetch origin badges 2>/dev/null; then
+            git show origin/badges:coverage-summary.json > coverage-base/coverage-summary.json || echo "{}" > coverage-base/coverage-summary.json
+          else
+            echo "{}" > coverage-base/coverage-summary.json
+          fi
+
+      - name: "📊 Coverage Report"
+        uses: davelosert/vitest-coverage-report-action@v2
+        if: always() && steps.check-prefix.outputs.run_coverage == 'true'
+        with:
+          json-summary-path: ./coverage/coverage-summary.json
+          json-final-path: ./coverage/coverage-final.json
+          json-summary-compare-path: ./coverage-base/coverage-summary.json
+          file-coverage-mode: changes

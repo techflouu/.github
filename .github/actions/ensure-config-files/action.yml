@@ -1,0 +1,87 @@
+name: "Ensure Config Files"
+description: "Download config files artifact, verify them, and optionally spread them to current working directory"
+
+inputs:
+  target:
+    description: "Target environment (dev, stg, prod)"
+    required: true
+    type: string
+  artifact-name:
+    description: "Name of the artifact to download"
+    required: false
+    type: string
+    default: "config-files"
+  download-artifact:
+    description: "Whether to download the artifact (set to false if config files are already present)"
+    required: false
+    type: boolean
+    default: true
+  spread-files:
+    description: "Whether to spread config files to current working directory"
+    required: false
+    type: boolean
+    default: true
+  config-path:
+    description: "Path where config files are located (default: ./generated-config)"
+    required: false
+    type: string
+    default: "./generated-config"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Download environment config
+      if: inputs.download-artifact == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.config-path }}
+
+    - name: Verify config files
+      shell: bash
+      run: |
+        CONFIG_PATH="${{ inputs.config-path }}"
+        
+        # Verify generated config files
+        echo "🔍 Config Verification (${{ inputs.target }}) 🔍"
+        if [ -d "$CONFIG_PATH" ]; then
+          ls -la "$CONFIG_PATH"
+          
+          # Verify against template
+          TEMPLATE_PATH="config/${{ inputs.target }}"
+          if [ -d "$TEMPLATE_PATH" ]; then
+            EXPECTED_FILES=$(find "$TEMPLATE_PATH" -name "*.j2" -exec basename {} .j2 \; | sort)
+            for file in $EXPECTED_FILES; do
+              if [ -f "$CONFIG_PATH/$file" ]; then
+                echo "✅ $file"
+              else
+                echo "❌ Missing: $file"
+                exit 1
+              fi
+            done
+            echo "✅ All config files verified successfully"
+          else
+            echo "⚠️  Template not found: $TEMPLATE_PATH"
+            exit 1
+          fi
+        else
+          echo "❌ Config folder not found: $CONFIG_PATH"
+          exit 1
+        fi
+
+    - name: Spread config files to working directory
+      if: inputs.spread-files == 'true'
+      shell: bash
+      run: |
+        CONFIG_PATH="${{ inputs.config-path }}"
+        
+        echo "📂 Spreading config files to current working directory..."
+        rsync -a "$CONFIG_PATH"/ .
+        
+        echo "📋 Files in current working directory after spreading:"
+        ls -la
+        
+        echo "🧹 Cleaning up config folder..."
+        rm -rf "$CONFIG_PATH"
+        
+        echo "✅ Config files successfully spread to current working directory"

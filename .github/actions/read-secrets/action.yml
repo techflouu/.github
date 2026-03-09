@@ -1,0 +1,112 @@
+name: "Read Secrets"
+description: "Generate config file (.env, keys, etc.) extracted from vault using demeter"
+
+inputs:
+  target:
+    description: "Target environment (stg, prod)"
+    required: true
+    type: string
+  release-tag:
+    description: "Release tag/version to inject into config files"
+    required: false
+    type: string
+    default: "v1.0.0"
+  ts-oauth-secret:
+    description: "Tailscale OAuth secret"
+    required: true
+    type: string
+  vault-addr:
+    description: "Vault address"
+    required: true
+    type: string
+  vault-role:
+    description: "Vault role for authentication"
+    required: true
+    type: string
+
+outputs:
+  generated-config-path:
+    description: "Path to the generated configfile"
+    value: ${{ steps.generated-config.outputs.generated-config-path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Get OIDC ID Token
+      id: get-token
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const idToken = await core.getIDToken('${{ inputs.vault-addr }}');
+          core.setOutput('id_token', idToken);
+
+    - name: Install Vault CLI
+      shell: bash
+      run: |
+        echo "🔧 Installing Vault CLI..."
+        wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+        sudo apt update && sudo apt install vault
+        echo "✅ Vault CLI installed successfully"
+
+    - name: Connect to Private Network via Tailscale
+      uses: tailscale/github-action@v3
+      with:
+        version: 1.84.0
+        oauth-secret: ${{ inputs.ts-oauth-secret }}
+        tags: tag:ci-journey
+
+    - name: Log Tailscale Connection
+      shell: bash
+      run: echo "✅ Connected to private network via Tailscale"
+
+    - name: Authenticate with Vault
+      shell: bash
+      env:
+        VAULT_ADDR: ${{ inputs.vault-addr }}
+        VAULT_NAMESPACE: admin
+      run: |
+        echo "🔐 Authenticating with Vault..."
+        echo "VAULT_TOKEN=$(vault write -field=token auth/github-jwt/login role=${{ inputs.vault-role }} jwt=${{ steps.get-token.outputs.id_token }})" >> $GITHUB_ENV
+        echo "✅ Vault authentication successful"
+
+    - name: Generate config files using demeter
+      id: generated-config
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        VAULT_ADDR: ${{ inputs.vault-addr }}
+        VAULT_NAMESPACE: admin
+        GENERATED_CONFIG_PATH: ./generated-config
+      run: |
+        echo "📝 Generating config files for ${{ inputs.target }} environment..."
+        
+        # Run demeter and move files to target directory
+        npx @techflouu/demeter ${{ inputs.target }} $GENERATED_CONFIG_PATH
+        echo "✅ Config files generated using demeter"
+
+        # Inject RELEASE_TAG into .env
+        echo "RELEASE_TAG=${{ inputs.release-tag }}" >> $GENERATED_CONFIG_PATH/.env
+        echo "✅ RELEASE_TAG injected into .env file"
+
+        echo "generated-config-path=$GENERATED_CONFIG_PATH" >> $GITHUB_OUTPUT
+
+    - name: Generate Nomad token file
+      shell: bash
+      if: ${{ inputs.target == 'stg' }}
+      env:
+        VAULT_ADDR: ${{ inputs.vault-addr }}
+        VAULT_NAMESPACE: admin
+        GENERATED_CONFIG_PATH: ./generated-config
+      run: |
+        echo "🔐 Generating Nomad token..."
+        vault read -field=secret_id nomad/ci/creds/ci > $GENERATED_CONFIG_PATH/nomad.token
+        echo "✅ Nomad token generated successfully"
+
+    - name: Verify generated config files
+      uses: ./.github-shared/actions/ensure-config-files
+      with:
+        target: ${{ inputs.target }}
+        download-artifact: false
+        spread-files: false
+        config-path: ./generated-config

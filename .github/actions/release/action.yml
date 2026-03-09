@@ -1,0 +1,80 @@
+name: "Release"
+description: "Get project release version and/or generate Github Release if new version is published (only on release branch)"
+
+inputs:
+  node-version:
+    description: "Node.js version to use"
+    required: false
+    default: "20"
+
+outputs:
+  version:
+    description: "The release version (new version if on release branch, latest tag otherwise)"
+    value: ${{ steps.reconcile-version.outputs.version }}
+  new_release_published:
+    description: "Whether a new release was published"
+    value: ${{ steps.semantic-release.outputs.new_release_published }}
+  new_release_version:
+    description: "The new release version (only if new release was published)"
+    value: ${{ steps.semantic-release.outputs.new_release_version }}
+  new_release_notes:
+    description: "The generated release notes (only if new release was published)"
+    value: ${{ steps.semantic-release.outputs.new_release_notes }}
+  new_release_url:
+    description: "The URL of the new GitHub release (only if new release was published)"
+    value: ${{ steps.semantic-release.outputs.new_release_url }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'npm'
+    
+    - name: Check release branch
+      id: check-branch
+      shell: bash
+      run: |
+        # Check if current branch is configured as a release branch
+        RELEASE_BRANCHES=$(jq -r '.branches[] | if type == "string" then . else .name end' .releaserc.json)
+        CURRENT_BRANCH="${{ github.ref_name }}"
+        
+        if echo "$RELEASE_BRANCHES" | grep -q "^${CURRENT_BRANCH}$"; then
+          echo "is_release_branch=true" >> $GITHUB_OUTPUT
+        else
+          echo "is_release_branch=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Install semantic-release dependencies
+      if: steps.check-branch.outputs.is_release_branch == 'true'
+      shell: bash
+      run: |
+        npm install -g conventional-changelog-conventionalcommits @semantic-release/release-notes-generator
+
+    - name: Execute semantic-release
+      id: semantic-release
+      if: steps.check-branch.outputs.is_release_branch == 'true'
+      uses: cycjimmy/semantic-release-action@v4
+      with:
+        semantic_version: 24
+        extra_plugins: |
+          conventional-changelog-conventionalcommits
+          @semantic-release/release-notes-generator
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+
+    - name: Determine version output
+      id: reconcile-version
+      shell: bash
+      run: |
+        if [ "${{ steps.semantic-release.outputs.new_release_published }}" == "true" ]; then
+          VERSION="${{ steps.semantic-release.outputs.new_release_version }}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "✅ New release: ${VERSION}"
+        else
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "version=${LATEST_TAG}" >> $GITHUB_OUTPUT
+          echo "📋 No release needed, using latest tag: ${LATEST_TAG}"
+        fi
