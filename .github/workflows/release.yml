@@ -38,7 +38,7 @@ jobs:
 
       - name: Run Release Action
         id: release
-        uses: ./.github-shared/actions/release
+        uses: techflouu/.github/.github/actions/release
         with:
           node-version: ${{ inputs.node-version }}
 
