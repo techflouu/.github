@@ -23,6 +23,11 @@ inputs:
     required: false
     default: "npm run test:cov"
 
+outputs:
+  error_summary:
+    description: "A summary snippet of the failures (if any)"
+    value: ${{ steps.run-checks.outputs.error_summary }}
+
 runs:
   using: "composite"
   steps:
@@ -49,16 +54,17 @@ runs:
         GITHUB_TOKEN: ${{ github.token }}
 
     - name: Run linting and tests in parallel
+      id: run-checks
       run: |
-        # Start linting in background
-        ${{ inputs.lint-command }} &
+        # Start linting in background, pipe output
+        ${{ inputs.lint-command }} > lint_output.log 2>&1 &
         LINT_PID=$!
         
-        # Start tests in background (with or without coverage)
+        # Start tests in background (with or without coverage), pipe output
         if [ "${{ inputs.coverage }}" = "true" ]; then
-          ${{ inputs.test-cov-command }} &
+          ${{ inputs.test-cov-command }} > test_output.log 2>&1 &
         else
-          ${{ inputs.test-command }} &
+          ${{ inputs.test-command }} > test_output.log 2>&1 &
         fi
         TEST_PID=$!
         
@@ -71,9 +77,27 @@ runs:
         
         # Check if either failed
         if [ $LINT_EXIT -ne 0 ] || [ $TEST_EXIT -ne 0 ]; then
+          ERROR_MSG=""
           echo "❌ One or more checks failed:"
-          [ $LINT_EXIT -ne 0 ] && echo "  - Linting failed (exit code: $LINT_EXIT)"
-          [ $TEST_EXIT -ne 0 ] && echo "  - Tests failed (exit code: $TEST_EXIT)"
+          
+          if [ $LINT_EXIT -ne 0 ]; then 
+            echo "  - Linting failed (exit code: $LINT_EXIT)"
+            ERROR_MSG+="**Linting Error Snippet:**\n\`\`\`text\n$(tail -n 15 lint_output.log)\n\`\`\`\n\n"
+            cat lint_output.log
+          fi
+          
+          if [ $TEST_EXIT -ne 0 ]; then 
+            echo "  - Tests failed (exit code: $TEST_EXIT)"
+            ERROR_MSG+="**Testing Error Snippet:**\n\`\`\`text\n$(tail -n 15 test_output.log)\n\`\`\`"
+            cat test_output.log
+          fi
+          
+          # Encode newlines for GITHUB_OUTPUT multi-line string
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "error_summary<<$EOF" >> $GITHUB_OUTPUT
+          echo -e "$ERROR_MSG" >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
+          
           exit 1
         fi
         
