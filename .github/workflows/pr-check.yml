@@ -53,13 +53,13 @@ jobs:
 
       - name: Run Release Action
         id: release
-        uses: techflouu/.github/.github/actions/release
+        uses: techflouu/.github/.github/actions/release@main
         with:
           node-version: ${{ inputs.node-version }}
 
       - name: Run Read Secrets Action
         id: read-secrets
-        uses: techflouu/.github/.github/actions/read-secrets
+        uses: techflouu/.github/.github/actions/read-secrets@main
         with:
           target: ${{ inputs.target-env }}
           release-tag: ${{ steps.release.outputs.version }}
@@ -90,7 +90,7 @@ jobs:
           fetch-depth: 0
 
       - name: Ensure config files
-        uses: techflouu/.github/.github/actions/ensure-config-files
+        uses: techflouu/.github/.github/actions/ensure-config-files@main
         with:
           target: ${{ inputs.target-env }}
           artifact-name: config-files-${{ inputs.target-env }}
@@ -109,7 +109,7 @@ jobs:
 
       - name: Test and Lint
         id: run-checks
-        uses: techflouu/.github/.github/actions/test-and-lint
+        uses: techflouu/.github/.github/actions/test-and-lint@main
         with:
           coverage: ${{ steps.check-prefix.outputs.run_coverage }}
           node-version: ${{ inputs.node-version }}

@@ -104,7 +104,7 @@ runs:
         echo "✅ Nomad token generated successfully"
 
     - name: Verify generated config files
-      uses: techflouu/.github/.github/actions/ensure-config-files
+      uses: techflouu/.github/.github/actions/ensure-config-files@main
       with:
         target: ${{ inputs.target }}
         download-artifact: false
