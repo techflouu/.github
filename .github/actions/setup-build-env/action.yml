@@ -1,0 +1,58 @@
+name: "Setup Build Environment"
+description: "Checks out code, downloads required config files, sets up Node, installs dependencies, and tracks datadog sourcemaps"
+
+inputs:
+  target-env:
+    description: "Target environment for configs (e.g., stg, prod)"
+    required: true
+  node-version:
+    description: "Node.js version to use"
+    required: false
+    default: "20"
+  version:
+    description: "The application version / tag"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Ensure config files
+      uses: techflouu/.github/.github/actions/ensure-config-files@main
+      with:
+        target: ${{ inputs.target-env }}
+        artifact-name: config-files-${{ inputs.target-env }}
+
+    - name: Set short SHA
+      id: vars
+      shell: bash
+      run: |
+        parsedSHA=$(git rev-parse --short ${{ github.sha }})
+        echo "GITHUB_SHORT_SHA=$parsedSHA" >> $GITHUB_ENV
+        echo "CI_COMMIT_SHA=${{ github.sha }}" >> $GITHUB_ENV
+        echo "CI_COMMIT_SHORT_SHA=$parsedSHA" >> $GITHUB_ENV
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: "npm"
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        npm ci
+        npm run build
+
+    - name: Upload Sourcemaps
+      shell: bash
+      env:
+        DD_SERVICE: ${{ github.event.repository.name }}
+        DD_VERSION: ${{ inputs.version }}
+        DATADOG_SITE: datadoghq.com
+      run: |
+        export $(grep '^DD_API_KEY' .env | xargs)
+        export DATADOG_API_KEY=$DD_API_KEY
+        npm run upload-sourcemaps

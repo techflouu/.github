@@ -1,0 +1,26 @@
+name: Shared Deploy Test and Lint
+
+on:
+  workflow_call:
+    inputs:
+      target-env:
+        description: "Target environment (e.g., stg, prod)"
+        required: true
+        type: string
+
+jobs:
+  test-and-lint:
+    name: Test and Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure config files
+        uses: techflouu/.github/.github/actions/ensure-config-files@main
+        with:
+          target: ${{ inputs.target-env }}
+          artifact-name: config-files-${{ inputs.target-env }}
+
+      - name: Test and Lint
+        uses: techflouu/.github/.github/actions/test-and-lint@main

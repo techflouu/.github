@@ -1,0 +1,61 @@
+name: Shared Deploy Notify
+
+on:
+  workflow_call:
+    inputs:
+      target-env:
+        description: "Target environment (e.g., stg, prod)"
+        required: true
+        type: string
+      version:
+        description: "Release version tag"
+        required: true
+        type: string
+      status:
+        description: "Final status of the deploy step (success/failure/cancelled)"
+        required: true
+        type: string
+    secrets:
+      DISCORD_WEBHOOK:
+        required: true
+
+jobs:
+  notify-discord:
+    name: Discord Notification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Discord Deploy Success Notification
+        if: inputs.status == 'success'
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          nodetail: true
+          title: "✅ Deployment Successful!"
+          description: |
+            **Environment:** `${{ inputs.target-env }}`
+            **Version:** `${{ inputs.version }}`
+            **Repository:** ${{ github.repository }}
+            **Branch:** `${{ github.ref_name }}`
+            **Triggered by:** `@${{ github.actor }}`
+
+            📋 Release Notes:
+            🔗 [View Release](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ inputs.version }})
+          color: 0x00ff00
+
+      - name: Discord Deploy Failure Notification
+        if: inputs.status != 'success'
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          nodetail: true
+          title: "❌ Deployment Failed!"
+          description: |
+            **Environment:** `${{ inputs.target-env }}`
+            **Repository:** ${{ github.repository }}
+            **Branch:** `${{ github.ref_name }}`
+            **Triggered by:** `@${{ github.actor }}`
+
+            **Deployment Status:** ${{ inputs.status }}
+
+            🔗 [View Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          color: 0xff0000
