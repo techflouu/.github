@@ -28,6 +28,11 @@ on:
         required: false
         type: string
         default: "npm run test:cov"
+      ts-tag:
+        description: "Tailscale ACL tag for the CI node"
+        required: false
+        type: string
+        default: "ci-journey"
     secrets:
       TS_AUTHKEY:
         required: true
@@ -66,6 +71,7 @@ jobs:
           ts-oauth-secret: ${{ secrets.TS_AUTHKEY }}
           vault-addr: ${{ secrets.VAULT_ADDR }}
           vault-role: ${{ secrets.VAULT_ROLE }}
+          ts-tag: ${{ inputs.ts-tag }}
 
       - name: Upload config files
         uses: actions/upload-artifact@v4

@@ -23,6 +23,11 @@ inputs:
     description: "Vault role for authentication"
     required: true
     type: string
+  ts-tag:
+    description: "Tailscale ACL tag for the CI node"
+    required: false
+    type: string
+    default: "ci-journey"
 
 outputs:
   generated-config-path:
@@ -54,7 +59,7 @@ runs:
       with:
         version: 1.84.0
         oauth-secret: ${{ inputs.ts-oauth-secret }}
-        tags: tag:ci-journey
+        tags: tag:${{ inputs.ts-tag }}
 
     - name: Log Tailscale Connection
       shell: bash
