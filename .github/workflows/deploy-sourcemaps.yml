@@ -1,0 +1,60 @@
+name: Upload Sourcemaps
+
+on:
+  workflow_call:
+    inputs:
+      target-env:
+        description: "Target environment (e.g., stg, prod)"
+        required: true
+        type: string
+      node-version:
+        description: "Node.js version to use"
+        required: false
+        type: string
+        default: "20"
+      version:
+        description: "The application version / tag"
+        required: true
+        type: string
+
+jobs:
+  upload-sourcemaps:
+    name: Upload to Datadog
+    runs-on: ubuntu-latest
+    continue-on-error: true # Make this step completely non-blocking
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required for datadog git-metadata upload
+
+      - name: Ensure config files
+        uses: techflouu/.github/.github/actions/ensure-config-files@main
+        with:
+          target: ${{ inputs.target-env }}
+          artifact-name: config-files-${{ inputs.target-env }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: "npm"
+
+      - name: Install dependencies and build
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload Sourcemaps
+        env:
+          DD_SERVICE: ${{ github.event.repository.name }}
+          DD_VERSION: ${{ inputs.version }}
+          DATADOG_SITE: datadoghq.com
+        run: |
+          export $(grep '^DD_API_KEY' .env | xargs)
+          export DATADOG_API_KEY=$DD_API_KEY
+          npx @datadog/datadog-ci git-metadata upload
+          npx @datadog/datadog-ci sourcemaps upload ./dist --service=$DD_SERVICE --release-version=$DD_VERSION --minified-path-prefix=/app/dist/
