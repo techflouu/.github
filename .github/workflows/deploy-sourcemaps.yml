@@ -51,9 +51,9 @@ jobs:
       - name: Upload Sourcemaps
         env:
           DD_SERVICE: ${{ github.event.repository.name }}
-          DD_VERSION: ${{ inputs.version }}
           DATADOG_SITE: datadoghq.com
         run: |
+          export DD_VERSION=$(git rev-parse --short HEAD)
           export $(grep '^DD_API_KEY' .env | xargs)
           export DATADOG_API_KEY=$DD_API_KEY
           npx @datadog/datadog-ci git-metadata upload
