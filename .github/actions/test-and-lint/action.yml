@@ -56,50 +56,63 @@ runs:
     - name: Run linting and tests in parallel
       id: run-checks
       run: |
-        # Start linting in background, pipe output
-        ${{ inputs.lint-command }} > lint_output.log 2>&1 &
+        # Start linting in background — tee to both console and file for visibility
+        echo "::group::Lint Output"
+        ${{ inputs.lint-command }} 2>&1 | tee lint_output.log &
         LINT_PID=$!
-        
-        # Start tests in background (with or without coverage), pipe output
+
+        # Start tests in background — tee to both console and file for visibility
+        echo "::group::Test Output"
         if [ "${{ inputs.coverage }}" = "true" ]; then
-          ${{ inputs.test-cov-command }} > test_output.log 2>&1 &
+          ${{ inputs.test-cov-command }} 2>&1 | tee test_output.log &
         else
-          ${{ inputs.test-command }} > test_output.log 2>&1 &
+          ${{ inputs.test-command }} 2>&1 | tee test_output.log &
         fi
         TEST_PID=$!
-        
+
         # Wait for both processes and capture exit codes
         wait $LINT_PID
         LINT_EXIT=$?
-        
+
         wait $TEST_PID
         TEST_EXIT=$?
-        
+        echo "::endgroup::"
+
+        # Always show summaries
+        echo ""
+        echo "📋 Lint exit code: $LINT_EXIT"
+        echo "📋 Test exit code: $TEST_EXIT"
+
         # Check if either failed
         if [ $LINT_EXIT -ne 0 ] || [ $TEST_EXIT -ne 0 ]; then
           ERROR_MSG=""
+          echo ""
           echo "❌ One or more checks failed:"
-          
-          if [ $LINT_EXIT -ne 0 ]; then 
+
+          if [ $LINT_EXIT -ne 0 ]; then
             echo "  - Linting failed (exit code: $LINT_EXIT)"
             ERROR_MSG+="**Linting Error Snippet:**\n\`\`\`text\n$(tail -n 15 lint_output.log)\n\`\`\`\n\n"
+            echo "::group::Full Lint Output"
             cat lint_output.log
+            echo "::endgroup::"
           fi
-          
-          if [ $TEST_EXIT -ne 0 ]; then 
+
+          if [ $TEST_EXIT -ne 0 ]; then
             echo "  - Tests failed (exit code: $TEST_EXIT)"
             ERROR_MSG+="**Testing Error Snippet:**\n\`\`\`text\n$(tail -n 15 test_output.log)\n\`\`\`"
+            echo "::group::Full Test Output"
             cat test_output.log
+            echo "::endgroup::"
           fi
-          
+
           # Encode newlines for GITHUB_OUTPUT multi-line string
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
           echo "error_summary<<$EOF" >> $GITHUB_OUTPUT
           echo -e "$ERROR_MSG" >> $GITHUB_OUTPUT
           echo "$EOF" >> $GITHUB_OUTPUT
-          
+
           exit 1
         fi
-        
+
         echo "✅ All checks passed successfully!"
       shell: bash
