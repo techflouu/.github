@@ -16,6 +16,10 @@ on:
         description: "The application version / tag"
         required: true
         type: string
+      short_sha:
+        description: "The short sha of the commit"
+        required: false
+        type: string
 
 jobs:
   upload-sourcemaps:
@@ -53,7 +57,10 @@ jobs:
           DD_SERVICE: ${{ github.event.repository.name }}
           DATADOG_SITE: datadoghq.com
         run: |
-          export DD_VERSION=$(git rev-parse --short HEAD)
+          export DD_VERSION=${{ inputs.short_sha }}
+          if [ -z "$DD_VERSION" ]; then
+            export DD_VERSION=$(git rev-parse HEAD | cut -c1-7)
+          fi
           export $(grep '^DD_API_KEY' .env | xargs)
           export DATADOG_API_KEY=$DD_API_KEY
           npx @datadog/datadog-ci git-metadata upload
