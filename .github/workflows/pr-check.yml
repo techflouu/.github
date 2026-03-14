@@ -12,7 +12,7 @@ on:
         description: "Node.js version to use"
         required: false
         type: string
-        default: "20"
+        default: "22"
       lint-command:
         description: "NPM script command for linting"
         required: false
