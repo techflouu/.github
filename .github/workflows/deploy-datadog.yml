@@ -1,4 +1,4 @@
-name: Upload Sourcemaps
+name: Datadog Integration
 
 on:
   workflow_call:
@@ -20,12 +20,17 @@ on:
         description: "The short sha of the commit"
         required: false
         type: string
+      upload-sourcemaps:
+        description: "Whether to upload sourcemaps to Datadog"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
-  upload-sourcemaps:
-    name: Upload to Datadog
+  datadog:
+    name: Datadog Metadata & Sourcemaps
     runs-on: ubuntu-latest
-    continue-on-error: true # Make this step completely non-blocking
+    continue-on-error: true # Make this job completely non-blocking
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -52,7 +57,7 @@ jobs:
           npm ci
           npm run build
 
-      - name: Upload Sourcemaps
+      - name: Datadog Integration
         env:
           DD_SERVICE: ${{ github.event.repository.name }}
           DATADOG_SITE: datadoghq.com
@@ -63,5 +68,13 @@ jobs:
           fi
           export $(grep '^DD_API_KEY' .env | xargs)
           export DATADOG_API_KEY=$DD_API_KEY
+          
+          echo "Uploading git metadata..."
           npx @datadog/datadog-ci git-metadata upload
-          npx @datadog/datadog-ci sourcemaps upload ./dist --service=$DD_SERVICE --release-version=$DD_VERSION --minified-path-prefix=/app/dist/
+          
+          if [ "${{ inputs.upload-sourcemaps }}" = "true" ]; then
+            echo "Uploading sourcemaps..."
+            npx @datadog/datadog-ci sourcemaps upload ./dist --service=$DD_SERVICE --release-version=$DD_VERSION --minified-path-prefix=/app/dist/
+          else
+            echo "Skipping sourcemap upload (upload-sourcemaps is false)"
+          fi
