@@ -1,0 +1,52 @@
+name: "Test E2E"
+description: "Run E2E tests with Tailscale and environment configs"
+
+inputs:
+  target-env:
+    description: "Target environment (e.g., stg, prod)"
+    required: true
+    type: string
+  ts-oauth-secret:
+    description: "Tailscale OAuth secret"
+    required: true
+    type: string
+  node-version:
+    description: "Node.js version to use"
+    required: false
+    default: "24"
+  test-command:
+    description: "NPM script command for E2E tests"
+    required: false
+    default: "npm run test:e2e"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: "npm"
+
+    - name: Download environment config
+      uses: actions/download-artifact@v4
+      with:
+        name: config-files-${{ inputs.target-env }}
+        path: ./
+
+    - name: Connect to Private Network via Tailscale
+      uses: tailscale/github-action@v3
+      with:
+        version: 1.84.0
+        oauth-secret: ${{ inputs.ts-oauth-secret }}
+        tags: tag:ci-journey
+
+    - name: Install dependencies
+      run: npm ci
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+
+    - name: Run E2E tests
+      run: ${{ inputs.test-command }}
+      shell: bash

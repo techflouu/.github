@@ -1,0 +1,71 @@
+name: Shared Deploy Test E2E
+
+on:
+  workflow_call:
+    inputs:
+      target-env:
+        description: "Target environment (e.g., stg, prod)"
+        required: true
+        type: string
+      version:
+        description: "Release version tag"
+        required: true
+        type: string
+      node-version:
+        description: "Node.js version to use"
+        required: false
+        type: string
+        default: "24"
+    secrets:
+      TS_AUTHKEY:
+        required: true
+      DISCORD_WEBHOOK:
+        required: true
+
+jobs:
+  test-e2e:
+    name: E2E QA Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run E2E Tests
+        id: e2e
+        uses: techflouu/.github/.github/actions/test-e2e@main
+        with:
+          target-env: ${{ inputs.target-env }}
+          ts-oauth-secret: ${{ secrets.TS_AUTHKEY }}
+          node-version: ${{ inputs.node-version }}
+
+      - name: Discord E2E Success Notification
+        if: success()
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          nodetail: true
+          title: "✅ E2E QA Passed!"
+          description: |
+            **Environment:** `${{ inputs.target-env }}`
+            **Version:** `${{ inputs.version }}`
+            **Repository:** ${{ github.repository }}
+            
+            🧪 Automated E2E QA tests passed successfully on staging.
+          color: 0x00ff00
+
+      - name: Discord E2E Failure Notification
+        if: failure()
+        uses: sarisia/actions-status-discord@v1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          nodetail: true
+          title: "❌ E2E QA Failed!"
+          description: |
+            **Environment:** `${{ inputs.target-env }}`
+            **Version:** `${{ inputs.version }}`
+            **Repository:** ${{ github.repository }}
+            
+            💥 Automated E2E QA tests failed. Please check the logs.
+            
+            🔗 [View Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          color: 0xff0000

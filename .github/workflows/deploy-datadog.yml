@@ -11,7 +11,7 @@ on:
         description: "Node.js version to use"
         required: false
         type: string
-        default: "22"
+        default: "24"
       version:
         description: "The application version / tag"
         required: true
@@ -50,6 +50,7 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies and build
+        if: inputs.upload-sourcemaps == 'true'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -57,7 +58,7 @@ jobs:
           npm ci
           npm run build
 
-      - name: Datadog Integration
+      - name: Datadog Metadata Upload
         env:
           DD_SERVICE: ${{ github.event.repository.name }}
           DATADOG_SITE: datadoghq.com
@@ -66,15 +67,31 @@ jobs:
           if [ -z "$DD_VERSION" ]; then
             export DD_VERSION=$(git rev-parse HEAD | cut -c1-7)
           fi
-          export $(grep '^DD_API_KEY' .env | xargs)
-          export DATADOG_API_KEY=$DD_API_KEY
+          
+          # Try to get DD_API_KEY from .env if it exists
+          if [ -f .env ]; then
+            export $(grep '^DD_API_KEY' .env | xargs)
+            export DATADOG_API_KEY=$DD_API_KEY
+          fi
           
           echo "Uploading git metadata..."
           npx @datadog/datadog-ci git-metadata upload
           
-          if [ "${{ inputs.upload-sourcemaps }}" = "true" ]; then
-            echo "Uploading sourcemaps..."
-            npx @datadog/datadog-ci sourcemaps upload ./dist --service=$DD_SERVICE --release-version=$DD_VERSION --minified-path-prefix=/app/dist/
-          else
-            echo "Skipping sourcemap upload (upload-sourcemaps is false)"
+      - name: Datadog Sourcemaps Upload
+        if: inputs.upload-sourcemaps == 'true'
+        env:
+          DD_SERVICE: ${{ github.event.repository.name }}
+          DATADOG_SITE: datadoghq.com
+        run: |
+          export DD_VERSION=${{ inputs.short_sha }}
+          if [ -z "$DD_VERSION" ]; then
+            export DD_VERSION=$(git rev-parse HEAD | cut -c1-7)
           fi
+          
+          if [ -f .env ]; then
+            export $(grep '^DD_API_KEY' .env | xargs)
+            export DATADOG_API_KEY=$DD_API_KEY
+          fi
+          
+          echo "Uploading sourcemaps..."
+          npx @datadog/datadog-ci sourcemaps upload ./dist --service=$DD_SERVICE --release-version=$DD_VERSION --minified-path-prefix=/app/dist/
