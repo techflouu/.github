@@ -47,6 +47,10 @@ runs:
       env:
         GITHUB_TOKEN: ${{ github.token }}
 
+    - name: Build application
+      run: npm run build
+      shell: bash
+
     - name: Run E2E tests
       run: ${{ inputs.test-command }}
       shell: bash
