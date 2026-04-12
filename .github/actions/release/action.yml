@@ -32,7 +32,16 @@ runs:
       with:
         node-version: ${{ inputs.node-version }}
         cache: 'npm'
-    
+
+    - name: Seed default .releaserc.json if missing
+      shell: bash
+      run: |
+        if [ ! -f .releaserc.json ] && [ ! -f .releaserc ] && \
+           [ ! -f release.config.js ] && [ ! -f release.config.cjs ]; then
+          cp "$GITHUB_ACTION_PATH/.releaserc.default.json" .releaserc.json
+          echo "Seeded default .releaserc.json"
+        fi
+
     - name: Check release branch
       id: check-branch
       shell: bash
