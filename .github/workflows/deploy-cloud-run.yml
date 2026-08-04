@@ -1,0 +1,386 @@
+# Reusable Cloud Run deploy — the house pattern, extracted.
+#
+# Lifted from atomic-engine's .github/workflows/deploy.yml, deploy mechanics
+# only. Release machinery (semantic-release, prisma migrate deploy, npm ci) is
+# deliberately NOT here: it is application lifecycle, not deploy, and belongs in
+# the calling repo's own job before it calls this one.
+#
+# Shape: Tailscale → Vault (JWT/OIDC) → GCP (Workload Identity Federation) →
+# Cloud Build → `gcloud run deploy`. The image is built by Cloud Build, not by
+# the runner: the on-prem runners are arm64 and Cloud Run is linux/amd64 only.
+#
+# ── Inputs ──────────────────────────────────────────────────────────────────
+#  service_name          Cloud Run service name. REQUIRED.
+#  gcp_project           GCP project id the service and the registry live in.
+#                        REQUIRED.
+#  gcp_project_number    Project number — only used to address the Workload
+#                        Identity provider. REQUIRED.
+#  region                Cloud Run + Artifact Registry region.
+#                        Default asia-southeast1.
+#  wif_audience          OIDC audience configured on the WIF provider, e.g.
+#                        `techflouu-atomic-engine-gcp`. REQUIRED.
+#  wif_pool              Workload Identity pool id. Default `github-actions`.
+#  wif_provider          Workload Identity provider id. Default
+#                        `github-provider`.
+#  deploy_service_account
+#                        SA the workflow impersonates. Default
+#                        `github-actions@<gcp_project>.iam.gserviceaccount.com`
+#                        when left empty.
+#  runtime_service_account
+#                        SA the Cloud Run REVISION runs as. Empty (default)
+#                        leaves the service's current value untouched.
+#  tailscale_tag         ACL tag the ephemeral CI node claims, e.g.
+#                        `tag:ci-<app>`. REQUIRED. Ignored on the
+#                        self-hosted runners, which are already on the tailnet.
+#  vault_role            Vault JWT role, e.g. `<app>-ci`. REQUIRED.
+#  vault_secrets         vault-action `secrets:` block, verbatim and
+#                        multi-line. Every var it exports under `vault_env_prefix`
+#                        becomes a Cloud Run env var with the prefix stripped.
+#                        REQUIRED. Example:
+#                          app/<app>/data/<env>/<service> * | APPENV_ ;
+#  vault_env_prefix      Prefix stripped from Vault-exported env vars.
+#                        Default `APPENV_`.
+#  image                 Fully-qualified image to deploy. Set it to SKIP the
+#                        build entirely (promote an already-built image).
+#                        Default empty = build.
+#  artifact_registry_repo
+#                        Artifact Registry repository id. Required when
+#                        building.
+#  image_name            Image name inside the repo. Defaults to service_name.
+#  dockerfile            Dockerfile path, relative to build_context.
+#                        Default `Dockerfile`.
+#  build_context         Build context directory. Default `.`.
+#  service_env           Extra literal runtime env vars, one `KEY=VALUE` per
+#                        line, merged over the Vault-derived ones. This is the
+#                        single-image fleet SERVICE selector, e.g. `SERVICE=<composition>`.
+#  timeout_seconds       Cloud Run request timeout. Default 600 — matches the
+#                        agent step SLA and the Cloud Tasks HTTP-target
+#                        dispatch deadline.
+#  max_instances         `--max-instances`. Default 10.
+#  concurrency           `--concurrency`. Default 100.
+#  extra_flags           Raw extra flags appended to `gcloud run deploy`,
+#                        word-split by the shell. Default empty.
+#  datadog_service       Sets DD_SERVICE and turns on the DD_* block. Empty
+#                        (default) writes no DD_* vars at all. DD_API_KEY is
+#                        expected to arrive from Vault as
+#                        `<prefix>DD_API_KEY`, like every other secret.
+#  datadog_env           DD_ENV when datadog_service is set. Default
+#                        `production`.
+#  version_label         DD_VERSION and the revision-suffix seed. Defaults to
+#                        the short SHA.
+#  runs_on               JSON array for `runs-on`.
+#                        Default `["self-hosted","arm64","onprem"]`.
+#
+# ── Secrets (the caller must pass these; they are not inherited) ────────────
+#  TS_OAUTH_CLIENT_ID    Tailscale OAuth client id.   Required only when the
+#  TS_OAUTH_SECRET       Tailscale OAuth secret.      runner is not on-prem.
+#  VAULT_ADDR            Vault address. Doubles as the JWT audience, exactly as
+#                        atomic-engine does it. REQUIRED.
+#
+# ── Caller obligations ──────────────────────────────────────────────────────
+#  * The calling job needs `permissions: { id-token: write, contents: read }`.
+#  * The deploy SA needs artifactregistry.writer, cloudbuild.builds.builder and
+#    run.developer in gcp_project; the WIF provider must admit the caller repo.
+#  * This repo's Actions settings must allow the workflow to be reused by other
+#    repositories in the org.
+
+name: Deploy to Cloud Run (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      service_name:
+        required: true
+        type: string
+      gcp_project:
+        required: true
+        type: string
+      gcp_project_number:
+        required: true
+        type: string
+      region:
+        type: string
+        default: asia-southeast1
+      wif_audience:
+        required: true
+        type: string
+      wif_pool:
+        type: string
+        default: github-actions
+      wif_provider:
+        type: string
+        default: github-provider
+      deploy_service_account:
+        type: string
+        default: ''
+      runtime_service_account:
+        type: string
+        default: ''
+      tailscale_tag:
+        required: true
+        type: string
+      vault_role:
+        required: true
+        type: string
+      vault_secrets:
+        required: true
+        type: string
+      vault_env_prefix:
+        type: string
+        default: APPENV_
+      image:
+        type: string
+        default: ''
+      artifact_registry_repo:
+        type: string
+        default: ''
+      image_name:
+        type: string
+        default: ''
+      dockerfile:
+        type: string
+        default: Dockerfile
+      build_context:
+        type: string
+        default: '.'
+      service_env:
+        type: string
+        default: ''
+      timeout_seconds:
+        type: number
+        default: 600
+      max_instances:
+        type: number
+        default: 10
+      concurrency:
+        type: number
+        default: 100
+      extra_flags:
+        type: string
+        default: ''
+      datadog_service:
+        type: string
+        default: ''
+      datadog_env:
+        type: string
+        default: production
+      version_label:
+        type: string
+        default: ''
+      runs_on:
+        type: string
+        default: '["self-hosted","arm64","onprem"]'
+    secrets:
+      TS_OAUTH_CLIENT_ID:
+        required: false
+      TS_OAUTH_SECRET:
+        required: false
+      VAULT_ADDR:
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+    permissions:
+      id-token: write # OIDC for GCP Workload Identity + Vault JWT auth
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Resolve deploy identifiers
+        id: ids
+        env:
+          IMAGE: ${{ inputs.image }}
+          REGION: ${{ inputs.region }}
+          GCP_PROJECT: ${{ inputs.gcp_project }}
+          AR_REPO: ${{ inputs.artifact_registry_repo }}
+          IMAGE_NAME: ${{ inputs.image_name }}
+          SERVICE_NAME: ${{ inputs.service_name }}
+          VERSION_LABEL: ${{ inputs.version_label }}
+          DEPLOY_SA: ${{ inputs.deploy_service_account }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA=$(git rev-parse --short "$GITHUB_SHA")
+          echo "SHORT_SHA=$SHORT_SHA" >> "$GITHUB_ENV"
+          echo "DEPLOY_VERSION=${VERSION_LABEL:-$SHORT_SHA}" >> "$GITHUB_ENV"
+
+          if [ -n "$IMAGE" ]; then
+            echo "build_required=false" >> "$GITHUB_OUTPUT"
+            echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          else
+            if [ -z "$AR_REPO" ]; then
+              echo "::error::artifact_registry_repo is required unless the image input is supplied"
+              exit 1
+            fi
+            NAME="${IMAGE_NAME:-$SERVICE_NAME}"
+            echo "build_required=true" >> "$GITHUB_OUTPUT"
+            echo "image=${REGION}-docker.pkg.dev/${GCP_PROJECT}/${AR_REPO}/${NAME}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "deploy_sa=${DEPLOY_SA:-github-actions@${GCP_PROJECT}.iam.gserviceaccount.com}" >> "$GITHUB_OUTPUT"
+
+      #────────────────────────────────────────────────────────────────────────
+      # Authenticate & connect
+      #────────────────────────────────────────────────────────────────────────
+      # The on-prem runners already sit on the tailnet; only hosted runners need
+      # to join one. Same guard atomic-engine uses.
+      - name: Connect via Tailscale
+        if: runner.environment != 'self-hosted'
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: ${{ inputs.tailscale_tag }}
+
+      # Vault is reachable only over the tailnet. Auth is the GitHub OIDC token
+      # against the `github-jwt` mount — no static Vault token anywhere.
+      - name: Import secrets from Vault
+        id: vault
+        uses: hashicorp/vault-action@v4
+        with:
+          url: ${{ secrets.VAULT_ADDR }}
+          path: github-jwt
+          method: jwt
+          role: ${{ inputs.vault_role }}
+          jwtGithubAudience: ${{ secrets.VAULT_ADDR }}
+          secrets: ${{ inputs.vault_secrets }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ inputs.gcp_project }}
+          workload_identity_provider: >-
+            projects/${{ inputs.gcp_project_number }}/locations/global/workloadIdentityPools/${{ inputs.wif_pool }}/providers/${{ inputs.wif_provider }}
+          audience: ${{ inputs.wif_audience }}
+          service_account: ${{ steps.ids.outputs.deploy_sa }}
+
+      - name: Setup gcloud CLI
+        # Pinned to an exact release (not a range or "latest") to bypass the
+        # GitHub API rate limit the version resolver otherwise hits.
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          version: '575.0.1'
+          cache: true
+
+      #────────────────────────────────────────────────────────────────────────
+      # Build
+      # Cloud Build, not `docker build`: the runners are arm64 and Cloud Run
+      # only runs linux/amd64.
+      #────────────────────────────────────────────────────────────────────────
+      - name: Build and push image via Cloud Build
+        if: steps.ids.outputs.build_required == 'true'
+        env:
+          IMAGE: ${{ steps.ids.outputs.image }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+          BUILD_CONTEXT: ${{ inputs.build_context }}
+          GCP_PROJECT: ${{ inputs.gcp_project }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/cloudbuild.yaml <<EOF
+          steps:
+            - name: gcr.io/cloud-builders/docker
+              args: ['build', '-f', '${DOCKERFILE}', '-t', '${IMAGE}', '.']
+          images:
+            - '${IMAGE}'
+          options:
+            logging: CLOUD_LOGGING_ONLY
+          EOF
+          gcloud builds submit \
+            --project "$GCP_PROJECT" \
+            --config /tmp/cloudbuild.yaml \
+            "$BUILD_CONTEXT"
+
+      #────────────────────────────────────────────────────────────────────────
+      # Deploy
+      # Every runtime env var is passed here — nothing secret is baked into the
+      # image. Vault vars arrive prefixed and are stripped; `service_env` wins
+      # over them, so a caller can always pin a value.
+      #────────────────────────────────────────────────────────────────────────
+      - name: Build Cloud Run env-vars file
+        env:
+          VAULT_ENV_PREFIX: ${{ inputs.vault_env_prefix }}
+          SERVICE_ENV: ${{ inputs.service_env }}
+          DEPLOY_DD_SERVICE: ${{ inputs.datadog_service }}
+          DEPLOY_DD_ENV: ${{ inputs.datadog_env }}
+        run: |
+          python3 - <<'EOF'
+          import os, json, sys
+
+          prefix = os.environ.get('VAULT_ENV_PREFIX') or 'APPENV_'
+          out = {}
+
+          # Vault-exported app secrets, prefix stripped.
+          for k, v in os.environ.items():
+              if k.startswith(prefix):
+                  out[k[len(prefix):]] = v
+
+          # Caller-supplied literals last so they override.
+          for line in (os.environ.get('SERVICE_ENV') or '').splitlines():
+              line = line.strip()
+              if not line or line.startswith('#'):
+                  continue
+              if '=' not in line:
+                  sys.exit(f'service_env entry is not KEY=VALUE: {line!r}')
+              k, _, v = line.partition('=')
+              out[k.strip()] = v
+
+          dd_service = os.environ.get('DEPLOY_DD_SERVICE') or ''
+          if dd_service:
+              out['DD_SITE'] = 'datadoghq.com'
+              out['DD_LOGS_ENABLED'] = 'true'
+              out['DD_TRACE_ENABLED'] = 'true'
+              out['DD_SERVICE'] = dd_service
+              out['DD_ENV'] = os.environ.get('DEPLOY_DD_ENV') or 'production'
+              out['DD_VERSION'] = os.environ.get('DEPLOY_VERSION', '')
+
+          # YAML as `key: "json-encoded-value"` — json.dumps quoting is a valid
+          # YAML double-quoted scalar, so newlines and quotes survive intact.
+          with open('/tmp/cloudrun-env.yaml', 'w') as f:
+              for k, v in out.items():
+                  f.write(f'{k}: {json.dumps(v)}\n')
+
+          print(f'Wrote {len(out)} env vars.')
+          EOF
+
+      - name: Deploy to Cloud Run
+        env:
+          SERVICE_NAME: ${{ inputs.service_name }}
+          IMAGE: ${{ steps.ids.outputs.image }}
+          REGION: ${{ inputs.region }}
+          GCP_PROJECT: ${{ inputs.gcp_project }}
+          RUNTIME_SA: ${{ inputs.runtime_service_account }}
+          TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+          MAX_INSTANCES: ${{ inputs.max_instances }}
+          SERVICE_CONCURRENCY: ${{ inputs.concurrency }}
+          EXTRA_FLAGS: ${{ inputs.extra_flags }}
+        run: |
+          set -euo pipefail
+          # Revision suffix carries the run number as well as the SHA: a re-run
+          # of a failed deploy on the same commit would otherwise collide with
+          # the revision the failed attempt already created.
+          # --no-allow-unauthenticated is unconditional — these services are
+          # invoked by Cloud Tasks OIDC, never by the public internet. Flags not
+          # listed here keep their current service values.
+          args=(
+            --project "$GCP_PROJECT"
+            --region "$REGION"
+            --image "$IMAGE"
+            --revision-suffix "${SHORT_SHA}-${GITHUB_RUN_NUMBER}"
+            --no-allow-unauthenticated
+            --timeout "$TIMEOUT_SECONDS"
+            --max-instances "$MAX_INSTANCES"
+            --concurrency "$SERVICE_CONCURRENCY"
+            --env-vars-file /tmp/cloudrun-env.yaml
+          )
+          if [ -n "$RUNTIME_SA" ]; then
+            args+=(--service-account "$RUNTIME_SA")
+          fi
+          if [ -n "$EXTRA_FLAGS" ]; then
+            # Word-split on purpose: extra_flags is a raw flag string.
+            # shellcheck disable=SC2206
+            args+=($EXTRA_FLAGS)
+          fi
+
+          gcloud run deploy "$SERVICE_NAME" "${args[@]}"
