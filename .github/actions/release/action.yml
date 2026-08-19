@@ -60,7 +60,10 @@ runs:
       if: steps.check-branch.outputs.is_release_branch == 'true'
       shell: bash
       run: |
-        npm install -g conventional-changelog-conventionalcommits @semantic-release/release-notes-generator
+        # conventional-changelog-conventionalcommits is pinned to 9.x: 10.x requires
+        # conventional-changelog-writer@9+, while @semantic-release/release-notes-generator
+        # resolves writer 8.x.
+        npm install -g conventional-changelog-conventionalcommits@9.3.1 @semantic-release/release-notes-generator@14.1.1
 
     - name: Execute semantic-release
       id: semantic-release
@@ -69,8 +72,8 @@ runs:
       with:
         semantic_version: 24
         extra_plugins: |
-          conventional-changelog-conventionalcommits
-          @semantic-release/release-notes-generator
+          conventional-changelog-conventionalcommits@9.3.1
+          @semantic-release/release-notes-generator@14.1.1
       env:
         GITHUB_TOKEN: ${{ github.token }}
 
