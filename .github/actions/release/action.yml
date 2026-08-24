@@ -77,6 +77,19 @@ runs:
       env:
         GITHUB_TOKEN: ${{ github.token }}
 
+    # cycjimmy/semantic-release-action ends with `io.rmRF('.npmrc')` to avoid
+    # leaking npm auth it may have written — but it does not distinguish that
+    # from a committed .npmrc. Leaving the workspace short a tracked file breaks
+    # any later step that resolves a scoped registry.
+    - name: Restore .npmrc if semantic-release removed it
+      if: always()
+      shell: bash
+      run: |
+        if git cat-file -e HEAD:.npmrc 2>/dev/null && [ ! -f .npmrc ]; then
+          git checkout -- .npmrc
+          echo "Restored .npmrc (removed by semantic-release-action)."
+        fi
+
     - name: Determine version output
       id: reconcile-version
       shell: bash
