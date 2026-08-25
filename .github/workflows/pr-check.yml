@@ -28,6 +28,11 @@ on:
         required: false
         type: string
         default: "npm run test:cov"
+      pre-check-command:
+        description: "Optional command run after install, before lint/test start"
+        required: false
+        type: string
+        default: ""
       ts-tag:
         description: "Tailscale ACL tag for the CI node"
         required: false
@@ -122,6 +127,7 @@ jobs:
           lint-command: ${{ inputs.lint-command }}
           test-command: ${{ inputs.test-command }}
           test-cov-command: ${{ inputs.test-cov-command }}
+          pre-check-command: ${{ inputs.pre-check-command }}
 
       - name: Upload coverage report
         if: always() && steps.check-prefix.outputs.run_coverage == 'true'
