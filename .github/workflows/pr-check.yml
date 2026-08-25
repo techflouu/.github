@@ -110,7 +110,9 @@ jobs:
         id: check-prefix
         run: |
           TITLE="${{ github.event.pull_request.title }}"
-          if [[ "$TITLE" =~ ^(feat|fix|perf|revert|major): ]]; then
+          # Conventional-commit scope and breaking-change marker are optional:
+          # feat:, feat(vig):, feat!:, and feat(vig)!: all count.
+          if [[ "$TITLE" =~ ^(feat|fix|perf|revert|major)(\([^\)]+\))?!?: ]]; then
             echo "run_coverage=true" >> $GITHUB_OUTPUT
             echo "Commit matches primary semantic traits. Enabling coverage."
           else
