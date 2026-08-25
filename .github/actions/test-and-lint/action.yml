@@ -22,6 +22,15 @@ inputs:
     description: "NPM script command for testing with coverage"
     required: false
     default: "npm run test:cov"
+  pre-check-command:
+    description: >-
+      Optional command run after `npm ci` and before lint/test start. Use for
+      setup that both lint and test depend on — generated config, fetched
+      manifests — which cannot live inside either command because the two run
+      in parallel. Empty by default, so callers that do not set it are
+      unaffected.
+    required: false
+    default: ""
 
 outputs:
   error_summary:
@@ -49,6 +58,13 @@ runs:
 
     - name: Install dependencies
       run: npm ci
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+
+    - name: Run pre-check setup
+      if: inputs.pre-check-command != ''
+      run: ${{ inputs.pre-check-command }}
       shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
