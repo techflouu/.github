@@ -7,6 +7,26 @@ on:
         description: "Target environment (e.g., stg, prod)"
         required: true
         type: string
+      node-version:
+        description: "Node.js version to use"
+        required: false
+        type: string
+        default: "24"
+      lint-command:
+        description: "NPM script command for linting"
+        required: false
+        type: string
+        default: "npm run lint:ci"
+      test-command:
+        description: "NPM script command for testing without coverage"
+        required: false
+        type: string
+        default: "npm run test"
+      pre-check-command:
+        description: "Optional command run after install, before lint/test start"
+        required: false
+        type: string
+        default: ""
 
 jobs:
   test-and-lint:
@@ -24,3 +44,8 @@ jobs:
 
       - name: Test and Lint
         uses: techflouu/.github/.github/actions/test-and-lint@main
+        with:
+          node-version: ${{ inputs.node-version }}
+          lint-command: ${{ inputs.lint-command }}
+          test-command: ${{ inputs.test-command }}
+          pre-check-command: ${{ inputs.pre-check-command }}
