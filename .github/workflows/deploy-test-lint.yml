@@ -27,6 +27,22 @@ on:
         required: false
         type: string
         default: ""
+      ts-tag:
+        description: "Tailscale ACL tag for the CI node"
+        required: false
+        type: string
+        default: "ci-journey"
+      ts-network:
+        description: >-
+          Join the tailnet before the tests, so a test that runs against a
+          private resource (a staging database) can reach it. Off by
+          default. Needs the TS_AUTHKEY secret.
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      TS_AUTHKEY:
+        required: false
 
 jobs:
   test-and-lint:
@@ -41,6 +57,14 @@ jobs:
         with:
           target: ${{ inputs.target-env }}
           artifact-name: config-files-${{ inputs.target-env }}
+
+      - name: Connect to Private Network via Tailscale
+        if: inputs.ts-network
+        uses: tailscale/github-action@v3
+        with:
+          version: 1.84.0
+          oauth-secret: ${{ secrets.TS_AUTHKEY }}
+          tags: tag:${{ inputs.ts-tag }}
 
       - name: Test and Lint
         uses: techflouu/.github/.github/actions/test-and-lint@main
