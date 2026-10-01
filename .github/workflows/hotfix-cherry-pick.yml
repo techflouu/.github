@@ -1,0 +1,96 @@
+name: Shared Hotfix Cherry-Pick
+
+# Dispatched by vitas's /hotfix command (via each repo's thin workflow_dispatch
+# wrapper — reusable workflows can't be workflow_dispatch targets directly).
+# Does a real `git cherry-pick -x` onto a branch off prod and opens a PR —
+# this replaced a GitHub Data-API tree-copy that silently wrote each file's
+# full main-branch content instead of the commit's patch (no conflict
+# detection, could smuggle in unrelated undeployed changes to the same file).
+on:
+  workflow_call:
+    inputs:
+      commits:
+        description: "Space-separated commit SHAs to cherry-pick from main, in order"
+        required: true
+        type: string
+      branch:
+        description: "Hotfix branch name to create off prod"
+        required: true
+        type: string
+      triggered_by:
+        description: "Who triggered this (Discord/GitHub identity, for the PR body)"
+        required: false
+        type: string
+        default: "unknown"
+
+jobs:
+  cherry-pick:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: prod
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "vitas-bot"
+          git config user.email "vitas-bot@users.noreply.github.com"
+
+      - name: Create hotfix branch
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: git checkout -b "$BRANCH"
+
+      - name: Cherry-pick commits
+        id: cherry_pick
+        env:
+          COMMITS: ${{ inputs.commits }}
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          set -e
+          for sha in $COMMITS; do
+            echo "Cherry-picking $sha..."
+            if ! git cherry-pick -x "$sha"; then
+              echo "::error::Cherry-pick of $sha onto $BRANCH hit a conflict."
+              git cherry-pick --abort
+              exit 1
+            fi
+          done
+
+      - name: Push branch
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: git push origin "$BRANCH"
+
+      - name: Open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMITS: ${{ inputs.commits }}
+          BRANCH: ${{ inputs.branch }}
+          TRIGGERED_BY: ${{ inputs.triggered_by }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+          read -ra SHAS <<< "$COMMITS"
+
+          COMMIT_LIST=""
+          for sha in "${SHAS[@]}"; do
+            msg=$(git log -1 --format='%s' "$sha")
+            COMMIT_LIST="${COMMIT_LIST}- [\`${sha:0:7}\`](https://github.com/$REPO/commit/$sha) → $msg\n"
+          done
+
+          if [ "${#SHAS[@]}" -eq 1 ]; then
+            RAW_TITLE=$(git log -1 --format='%s' "${SHAS[0]}")
+            TITLE="hotfix: $(echo "$RAW_TITLE" | sed -E 's/^(feat|fix|perf|revert|major|refactor|docs|style|chore|test|build|ci)(\(.+\))?:\s*//')"
+          else
+            TITLE="hotfix: ${#SHAS[@]} cherry-picked commits"
+          fi
+
+          BODY=$(printf '## Hotfix\n\nCherry-picked from `main` via `git cherry-pick -x` (see trailers on each commit for provenance):\n%b\nTriggered by %s\n\n> Review and merge this PR manually. Merging auto back-merges prod into stg.\n' "$COMMIT_LIST" "$TRIGGERED_BY")
+
+          gh pr create \
+            --base prod \
+            --head "$BRANCH" \
+            --title "$TITLE" \
+            --body "$BODY"
