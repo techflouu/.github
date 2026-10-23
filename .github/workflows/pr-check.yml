@@ -48,19 +48,28 @@ on:
         required: false
         type: boolean
         default: false
+      secrets:
+        description: >-
+          Render config from Vault through Tailscale. When false, the check
+          renders config with the caller's `npm run config:ci` script, needs
+          no secret, and uploads no artifact.
+        required: false
+        type: boolean
+        default: true
     secrets:
       TS_AUTHKEY:
-        required: true
+        required: false
       VAULT_ADDR:
-        required: true
+        required: false
       VAULT_ROLE:
-        required: true
+        required: false
       DISCORD_WEBHOOK:
         required: false
 
 jobs:
   prepare-env:
     name: Prepare Environment
+    if: inputs.secrets
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.release.outputs.version }}
@@ -73,13 +82,13 @@ jobs:
 
       - name: Run Release Action
         id: release
-        uses: techflouu/.github/.github/actions/release@main
+        uses: techflouu/.github/.github/actions/release@v2
         with:
           node-version: ${{ inputs.node-version }}
 
       - name: Run Read Secrets Action
         id: read-secrets
-        uses: techflouu/.github/.github/actions/read-secrets@main
+        uses: techflouu/.github/.github/actions/read-secrets@v2
         with:
           target: ${{ inputs.target-env }}
           release-tag: ${{ steps.release.outputs.version }}
@@ -99,6 +108,7 @@ jobs:
 
   test-and-lint:
     name: Test and Lint
+    if: inputs.secrets
     runs-on: ubuntu-latest
     needs: prepare-env
     outputs:
@@ -111,7 +121,7 @@ jobs:
           fetch-depth: 0
 
       - name: Ensure config files
-        uses: techflouu/.github/.github/actions/ensure-config-files@main
+        uses: techflouu/.github/.github/actions/ensure-config-files@v2
         with:
           target: ${{ inputs.target-env }}
           artifact-name: config-files-${{ inputs.target-env }}
@@ -140,7 +150,7 @@ jobs:
 
       - name: Test and Lint
         id: run-checks
-        uses: techflouu/.github/.github/actions/test-and-lint@main
+        uses: techflouu/.github/.github/actions/test-and-lint@v2
         with:
           coverage: ${{ steps.check-prefix.outputs.run_coverage }}
           node-version: ${{ inputs.node-version }}
@@ -158,6 +168,82 @@ jobs:
             coverage/coverage-summary.json
             coverage/coverage-final.json
           retention-days: 3
+
+      - name: Fetch base branch coverage
+        if: always() && steps.check-prefix.outputs.run_coverage == 'true'
+        run: |
+          mkdir -p coverage-base
+          if git fetch origin badges 2>/dev/null; then
+            git show origin/badges:coverage-summary.json > coverage-base/coverage-summary.json || echo "{}" > coverage-base/coverage-summary.json
+          else
+            echo "{}" > coverage-base/coverage-summary.json
+          fi
+
+      - name: "📊 Coverage Report"
+        uses: davelosert/vitest-coverage-report-action@v2
+        if: always() && steps.check-prefix.outputs.run_coverage == 'true'
+        with:
+          json-summary-path: ./coverage/coverage-summary.json
+          json-final-path: ./coverage/coverage-final.json
+          json-summary-compare-path: ./coverage-base/coverage-summary.json
+          file-coverage-mode: changes
+
+  test-and-lint-no-secrets:
+    name: Test and Lint (No Secrets)
+    if: ${{ !inputs.secrets }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      error_summary: ${{ steps.run-checks.outputs.error_summary }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Render CI config
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if ! jq -e '.scripts["config:ci"]' package.json > /dev/null; then
+            echo "::error title=Missing config:ci script::secrets is false, so the PR check renders config with 'npm run config:ci'. Add a config:ci script to package.json."
+            exit 1
+          fi
+          npm run config:ci
+
+      - name: Check Commit Prefix
+        id: check-prefix
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # Conventional-commit scope and breaking-change marker are optional:
+          # feat:, feat(vig):, feat!:, and feat(vig)!: all count.
+          if [[ "$TITLE" =~ ^(feat|fix|perf|revert|major)(\([^\)]+\))?!?: ]]; then
+            echo "run_coverage=true" >> "$GITHUB_OUTPUT"
+            echo "Commit matches primary semantic traits. Enabling coverage."
+          else
+            echo "run_coverage=false" >> "$GITHUB_OUTPUT"
+            echo "Commit is a minor chore or doc update. Skipping coverage."
+          fi
+
+      - name: Test and Lint
+        id: run-checks
+        uses: techflouu/.github/.github/actions/test-and-lint@v2
+        with:
+          coverage: ${{ steps.check-prefix.outputs.run_coverage }}
+          node-version: ${{ inputs.node-version }}
+          lint-command: ${{ inputs.lint-command }}
+          test-command: ${{ inputs.test-command }}
+          test-cov-command: ${{ inputs.test-cov-command }}
+          pre-check-command: ${{ inputs.pre-check-command }}
 
       - name: Fetch base branch coverage
         if: always() && steps.check-prefix.outputs.run_coverage == 'true'
