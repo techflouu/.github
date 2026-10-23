@@ -3,6 +3,10 @@ name: Shared Deploy Prepare
 on:
   workflow_call:
     inputs:
+      environment:
+        description: "GitHub environment the job binds to (stg, prod)"
+        required: true
+        type: string
       target-env:
         description: "Target environment (e.g., stg, prod)"
         required: true
@@ -31,6 +35,7 @@ jobs:
   prepare-env:
     name: Prepare Environment
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     outputs:
       version: ${{ steps.release.outputs.version }}
       short_sha: ${{ steps.sha.outputs.short_sha }}

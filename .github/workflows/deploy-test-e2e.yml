@@ -3,6 +3,10 @@ name: Shared Deploy Test E2E
 on:
   workflow_call:
     inputs:
+      environment:
+        description: "GitHub environment the job binds to (stg, prod)"
+        required: true
+        type: string
       target-env:
         description: "Target environment (e.g., stg, prod)"
         required: true
@@ -26,6 +30,7 @@ jobs:
   test-e2e:
     name: E2E QA Test
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -3,6 +3,10 @@ name: Shared Deploy Notify
 on:
   workflow_call:
     inputs:
+      environment:
+        description: "GitHub environment the job binds to (stg, prod)"
+        required: true
+        type: string
       target-env:
         description: "Target environment (e.g., stg, prod)"
         required: true
@@ -23,6 +27,7 @@ jobs:
   notify-discord:
     name: Discord Notification
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     steps:
       - name: Discord Deploy Success Notification
         if: inputs.status == 'success'
