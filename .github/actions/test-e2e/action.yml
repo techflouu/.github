@@ -32,7 +32,17 @@ runs:
       uses: actions/download-artifact@v4
       with:
         name: config-files-${{ inputs.target-env }}
-        path: ./
+        path: ./generated-config
+
+    - name: Mask config values
+      shell: bash
+      run: bash "${{ github.action_path }}/../read-secrets/mask-config-values.sh" ./generated-config
+
+    - name: Spread config files to working directory
+      shell: bash
+      run: |
+        cp -a ./generated-config/. ./
+        rm -rf ./generated-config
 
     - name: Connect to Private Network via Tailscale
       uses: tailscale/github-action@v3
