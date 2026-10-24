@@ -199,7 +199,7 @@ runs:
       run: bash "${{ github.action_path }}/mask-config-values.sh" ./generated-config
 
     - name: Verify generated config files
-      uses: techflouu/.github/.github/actions/ensure-config-files@main
+      uses: techflouu/.github/.github/actions/ensure-config-files@ci/self-hosted-runners
       with:
         target: ${{ inputs.target }}
         download-artifact: false

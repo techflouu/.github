@@ -53,7 +53,7 @@ jobs:
 
       - name: Run Release Action
         id: release
-        uses: techflouu/.github/.github/actions/release@main
+        uses: techflouu/.github/.github/actions/release@ci/self-hosted-runners
 
   prepare-env:
     name: Prepare Environment
@@ -71,7 +71,7 @@ jobs:
 
       - name: Run Read Secrets Action
         id: read-secrets
-        uses: techflouu/.github/.github/actions/read-secrets@main
+        uses: techflouu/.github/.github/actions/read-secrets@ci/self-hosted-runners
         with:
           target: ${{ inputs.target-env }}
           release-tag: ${{ needs.version.outputs.version }}

@@ -43,7 +43,7 @@ jobs:
           fetch-depth: 0 # Required for datadog git-metadata upload
 
       - name: Ensure config files
-        uses: techflouu/.github/.github/actions/ensure-config-files@main
+        uses: techflouu/.github/.github/actions/ensure-config-files@ci/self-hosted-runners
         with:
           target: ${{ inputs.target-env }}
           artifact-name: config-files-${{ inputs.target-env }}

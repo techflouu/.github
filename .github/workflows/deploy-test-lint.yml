@@ -60,13 +60,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Ensure config files
-        uses: techflouu/.github/.github/actions/ensure-config-files@main
+        uses: techflouu/.github/.github/actions/ensure-config-files@ci/self-hosted-runners
         with:
           target: ${{ inputs.target-env }}
           artifact-name: config-files-${{ inputs.target-env }}
 
       - name: Test and Lint
-        uses: techflouu/.github/.github/actions/test-and-lint@main
+        uses: techflouu/.github/.github/actions/test-and-lint@ci/self-hosted-runners
         with:
           node-version: ${{ inputs.node-version }}
           lint-command: ${{ inputs.lint-command }}
