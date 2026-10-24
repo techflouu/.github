@@ -3,6 +3,10 @@ name: Datadog Integration
 on:
   workflow_call:
     inputs:
+      environment:
+        description: "GitHub environment the job binds to (stg, prod)"
+        required: true
+        type: string
       target-env:
         description: "Target environment (e.g., stg, prod)"
         required: true
@@ -30,6 +34,7 @@ jobs:
   datadog:
     name: Datadog Metadata & Sourcemaps
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     continue-on-error: true # Make this job completely non-blocking
     steps:
       - name: Checkout Code
