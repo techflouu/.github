@@ -86,24 +86,28 @@ runs:
       if: inputs.backend == 'vault'
       shell: bash
       run: |
+        # A self-hosted runner keeps the CLI from an earlier job.
+        if command -v vault >/dev/null 2>&1; then
+          echo "Vault CLI is already installed"
+          exit 0
+        fi
+
         echo "🔧 Installing Vault CLI..."
-        wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+        wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --batch --yes --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
-        sudo apt update && sudo apt install vault
+        sudo apt-get update
+        sudo apt-get install -y vault
         echo "✅ Vault CLI installed successfully"
 
+    # The self-hosted runners are already on the tailnet. Hosted runners
+    # still join it to reach Vault.
     - name: Connect to Private Network via Tailscale
-      if: inputs.backend == 'vault'
+      if: inputs.backend == 'vault' && runner.environment != 'self-hosted'
       uses: tailscale/github-action@v3
       with:
         version: 1.84.0
         oauth-secret: ${{ inputs.ts-oauth-secret }}
         tags: tag:${{ inputs.ts-tag }}
-
-    - name: Log Tailscale Connection
-      if: inputs.backend == 'vault'
-      shell: bash
-      run: echo "✅ Connected to private network via Tailscale"
 
     - name: Authenticate with Vault
       if: inputs.backend == 'vault'

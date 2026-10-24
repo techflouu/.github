@@ -22,11 +22,11 @@ inputs:
 runs:
   using: "composite"
   steps:
+    # No `cache: npm`. The runner keeps npm's cache on a local Ceph volume.
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
-        cache: "npm"
 
     - name: Download environment config
       uses: actions/download-artifact@v4
@@ -44,7 +44,9 @@ runs:
         cp -a ./generated-config/. ./
         rm -rf ./generated-config
 
+    # The self-hosted runners are already on the tailnet.
     - name: Connect to Private Network via Tailscale
+      if: runner.environment != 'self-hosted'
       uses: tailscale/github-action@v3
       with:
         version: 1.84.0

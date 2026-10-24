@@ -40,11 +40,11 @@ outputs:
 runs:
   using: "composite"
   steps:
+    # No `cache: npm`. The runner keeps npm's cache on a local Ceph volume.
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
-        cache: "npm"
 
     - name: Cache Vite/Vitest
       uses: actions/cache@v4

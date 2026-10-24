@@ -29,7 +29,7 @@ on:
 jobs:
   test-e2e:
     name: E2E QA Test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ARM64]
     environment: ${{ inputs.environment }}
     steps:
       - name: Checkout

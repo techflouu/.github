@@ -32,15 +32,17 @@ on:
         type: string
         default: ""
       ts-tag:
-        description: "Tailscale ACL tag for the CI node"
+        description: >-
+          Unused. The self-hosted runners are already on the tailnet. Kept so
+          existing callers stay valid.
         required: false
         type: string
         default: "ci-journey"
       ts-network:
         description: >-
-          Join the tailnet before the tests, so a test that runs against a
-          private resource (a staging database) can reach it. Off by
-          default. Needs the TS_AUTHKEY secret.
+          Unused. The self-hosted runners are already on the tailnet, so a
+          test can reach a private resource (a staging database) without it.
+          Kept so existing callers stay valid.
         required: false
         type: boolean
         default: false
@@ -51,7 +53,7 @@ on:
 jobs:
   test-and-lint:
     name: Test and Lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ARM64]
     environment: ${{ inputs.environment }}
     steps:
       - name: Checkout
@@ -62,14 +64,6 @@ jobs:
         with:
           target: ${{ inputs.target-env }}
           artifact-name: config-files-${{ inputs.target-env }}
-
-      - name: Connect to Private Network via Tailscale
-        if: inputs.ts-network
-        uses: tailscale/github-action@v3
-        with:
-          version: 1.84.0
-          oauth-secret: ${{ secrets.TS_AUTHKEY }}
-          tags: tag:${{ inputs.ts-tag }}
 
       - name: Test and Lint
         uses: techflouu/.github/.github/actions/test-and-lint@main

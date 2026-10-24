@@ -40,17 +40,15 @@ on:
         default: "ci-journey"
       ts-network:
         description: >-
-          Join the tailnet in the test job too, so a test that runs against
-          a private resource (a staging database) can reach it. The prepare
-          job always joins, to reach Vault; the test job runs on a fresh
-          runner and does not, unless this is true. Off by default, so
-          callers without such tests pay nothing.
+          Unused. The self-hosted runners are already on the tailnet, so a
+          test can reach a private resource (a staging database) without it.
+          Kept so existing callers stay valid.
         required: false
         type: boolean
         default: false
       secrets:
         description: >-
-          Render config from Vault through Tailscale. When false, the check
+          Render config from Vault. When false, the check
           renders config with the caller's `npm run config:ci` script, needs
           no secret, and uploads no artifact.
         required: false
@@ -70,7 +68,7 @@ jobs:
   prepare-env:
     name: Prepare Environment
     if: inputs.secrets
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ARM64]
     outputs:
       version: ${{ steps.release.outputs.version }}
     steps:
@@ -82,13 +80,13 @@ jobs:
 
       - name: Run Release Action
         id: release
-        uses: techflouu/.github/.github/actions/release@v2
+        uses: techflouu/.github/.github/actions/release@main
         with:
           node-version: ${{ inputs.node-version }}
 
       - name: Run Read Secrets Action
         id: read-secrets
-        uses: techflouu/.github/.github/actions/read-secrets@v2
+        uses: techflouu/.github/.github/actions/read-secrets@main
         with:
           target: ${{ inputs.target-env }}
           release-tag: ${{ steps.release.outputs.version }}
@@ -109,7 +107,7 @@ jobs:
   test-and-lint:
     name: Test and Lint
     if: inputs.secrets
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ARM64]
     needs: prepare-env
     outputs:
       error_summary: ${{ steps.run-checks.outputs.error_summary }}
@@ -121,18 +119,10 @@ jobs:
           fetch-depth: 0
 
       - name: Ensure config files
-        uses: techflouu/.github/.github/actions/ensure-config-files@v2
+        uses: techflouu/.github/.github/actions/ensure-config-files@main
         with:
           target: ${{ inputs.target-env }}
           artifact-name: config-files-${{ inputs.target-env }}
-
-      - name: Connect to Private Network via Tailscale
-        if: inputs.ts-network
-        uses: tailscale/github-action@v3
-        with:
-          version: 1.84.0
-          oauth-secret: ${{ secrets.TS_AUTHKEY }}
-          tags: tag:${{ inputs.ts-tag }}
 
       - name: Check Commit Prefix
         id: check-prefix
@@ -150,7 +140,7 @@ jobs:
 
       - name: Test and Lint
         id: run-checks
-        uses: techflouu/.github/.github/actions/test-and-lint@v2
+        uses: techflouu/.github/.github/actions/test-and-lint@main
         with:
           coverage: ${{ steps.check-prefix.outputs.run_coverage }}
           node-version: ${{ inputs.node-version }}
@@ -191,7 +181,7 @@ jobs:
   test-and-lint-no-secrets:
     name: Test and Lint (No Secrets)
     if: ${{ !inputs.secrets }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ARM64]
     permissions:
       contents: read
       packages: read
@@ -237,7 +227,7 @@ jobs:
 
       - name: Test and Lint
         id: run-checks
-        uses: techflouu/.github/.github/actions/test-and-lint@v2
+        uses: techflouu/.github/.github/actions/test-and-lint@main
         with:
           coverage: ${{ steps.check-prefix.outputs.run_coverage }}
           node-version: ${{ inputs.node-version }}
