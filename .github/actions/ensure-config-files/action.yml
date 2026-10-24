@@ -37,6 +37,10 @@ runs:
         name: ${{ inputs.artifact-name }}
         path: ${{ inputs.config-path }}
 
+    - name: Mask config values
+      shell: bash
+      run: bash "${{ github.action_path }}/../read-secrets/mask-config-values.sh" "${{ inputs.config-path }}"
+
     - name: Verify config files
       shell: bash
       run: |
