@@ -1,5 +1,5 @@
 name: "Read Secrets"
-description: "Generate config file (.env, keys, etc.) extracted from vault using demeter"
+description: "Generate config files (.env, keys, etc.) with demeter from Vault (backend: vault) or GCP Secret Manager (backend: gsm). Both backends need the caller job to grant id-token: write."
 
 inputs:
   target:
@@ -11,17 +11,39 @@ inputs:
     required: false
     type: string
     default: "v1.0.0"
+  backend:
+    description: "Secret store demeter reads (vault, gsm)"
+    required: false
+    type: string
+    default: "vault"
   ts-oauth-secret:
-    description: "Tailscale OAuth secret"
-    required: true
+    description: "Tailscale OAuth secret (required when backend is vault)"
+    required: false
     type: string
   vault-addr:
-    description: "Vault address"
-    required: true
+    description: "Vault address (required when backend is vault)"
+    required: false
     type: string
   vault-role:
-    description: "Vault role for authentication"
-    required: true
+    description: "Vault role for authentication (required when backend is vault)"
+    required: false
+    type: string
+  gcp-project:
+    description: "GCP project that holds the secrets (backend gsm)"
+    required: false
+    type: string
+    default: "journeyflouu"
+  gcp-workload-identity-provider:
+    description: "Workload Identity Federation provider resource name (required when backend is gsm)"
+    required: false
+    type: string
+  gcp-service-account:
+    description: "Service account the workflow impersonates (required when backend is gsm)"
+    required: false
+    type: string
+  nomad-token:
+    description: "Nomad token written to nomad.token (required when backend is gsm and target is stg)"
+    required: false
     type: string
   ts-tag:
     description: "Tailscale ACL tag for the CI node"
@@ -32,13 +54,28 @@ inputs:
 outputs:
   generated-config-path:
     description: "Path to the generated configfile"
-    value: ${{ steps.generated-config.outputs.generated-config-path }}
+    value: ${{ steps.generated-config.outputs.generated-config-path || steps.generated-config-gsm.outputs.generated-config-path }}
 
 runs:
   using: "composite"
   steps:
+    - name: Check inputs
+      shell: bash
+      env:
+        BACKEND: ${{ inputs.backend }}
+        TARGET: ${{ inputs.target }}
+        TS_OAUTH_SECRET: ${{ inputs.ts-oauth-secret }}
+        VAULT_ADDR: ${{ inputs.vault-addr }}
+        VAULT_ROLE: ${{ inputs.vault-role }}
+        GCP_PROJECT: ${{ inputs.gcp-project }}
+        GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ inputs.gcp-workload-identity-provider }}
+        GCP_SERVICE_ACCOUNT: ${{ inputs.gcp-service-account }}
+        NOMAD_TOKEN: ${{ inputs.nomad-token }}
+      run: bash "${{ github.action_path }}/check-inputs.sh"
+
     - name: Get OIDC ID Token
       id: get-token
+      if: inputs.backend == 'vault'
       uses: actions/github-script@v7
       with:
         script: |
@@ -46,6 +83,7 @@ runs:
           core.setOutput('id_token', idToken);
 
     - name: Install Vault CLI
+      if: inputs.backend == 'vault'
       shell: bash
       run: |
         echo "🔧 Installing Vault CLI..."
@@ -55,6 +93,7 @@ runs:
         echo "✅ Vault CLI installed successfully"
 
     - name: Connect to Private Network via Tailscale
+      if: inputs.backend == 'vault'
       uses: tailscale/github-action@v3
       with:
         version: 1.84.0
@@ -62,10 +101,12 @@ runs:
         tags: tag:${{ inputs.ts-tag }}
 
     - name: Log Tailscale Connection
+      if: inputs.backend == 'vault'
       shell: bash
       run: echo "✅ Connected to private network via Tailscale"
 
     - name: Authenticate with Vault
+      if: inputs.backend == 'vault'
       shell: bash
       env:
         VAULT_ADDR: ${{ inputs.vault-addr }}
@@ -77,8 +118,16 @@ runs:
         echo "VAULT_TOKEN=$VAULT_TOKEN" >> $GITHUB_ENV
         echo "✅ Vault authentication successful"
 
+    - name: Authenticate to Google Cloud
+      if: inputs.backend == 'gsm'
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ inputs.gcp-workload-identity-provider }}
+        service_account: ${{ inputs.gcp-service-account }}
+
     - name: Generate config files using demeter
       id: generated-config
+      if: inputs.backend == 'vault'
       shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
@@ -98,9 +147,29 @@ runs:
 
         echo "generated-config-path=$GENERATED_CONFIG_PATH" >> $GITHUB_OUTPUT
 
+    - name: Generate config files using demeter (gsm)
+      id: generated-config-gsm
+      if: inputs.backend == 'gsm'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        GCP_PROJECT: ${{ inputs.gcp-project }}
+        GENERATED_CONFIG_PATH: ./generated-config
+      run: |
+        echo "📝 Generating config files for ${{ inputs.target }} environment from GCP Secret Manager..."
+
+        DEMETER_BACKEND=gsm DEMETER_GCP_PROJECT="$GCP_PROJECT" DEMETER_STRICT=1 npx @techflouu/demeter@2 ${{ inputs.target }} $GENERATED_CONFIG_PATH
+        echo "✅ Config files generated using demeter"
+
+        # Inject RELEASE_TAG into .env
+        echo "RELEASE_TAG=${{ inputs.release-tag }}" >> $GENERATED_CONFIG_PATH/.env
+        echo "✅ RELEASE_TAG injected into .env file"
+
+        echo "generated-config-path=$GENERATED_CONFIG_PATH" >> $GITHUB_OUTPUT
+
     - name: Generate Nomad token file
       shell: bash
-      if: ${{ inputs.target == 'stg' }}
+      if: ${{ inputs.backend == 'vault' && inputs.target == 'stg' }}
       env:
         VAULT_ADDR: ${{ inputs.vault-addr }}
         VAULT_NAMESPACE: admin
@@ -109,6 +178,17 @@ runs:
         echo "🔐 Generating Nomad token..."
         vault read -field=secret_id nomad/ci/creds/ci > $GENERATED_CONFIG_PATH/nomad.token
         echo "✅ Nomad token generated successfully"
+
+    - name: Write Nomad token file
+      if: ${{ inputs.backend == 'gsm' && inputs.target == 'stg' }}
+      shell: bash
+      env:
+        NOMAD_TOKEN: ${{ inputs.nomad-token }}
+        GENERATED_CONFIG_PATH: ./generated-config
+      run: |
+        install -m 600 /dev/null "$GENERATED_CONFIG_PATH/nomad.token"
+        printf '%s' "$NOMAD_TOKEN" > "$GENERATED_CONFIG_PATH/nomad.token"
+        echo "✅ Nomad token written"
 
     - name: Mask rendered config values
       shell: bash
