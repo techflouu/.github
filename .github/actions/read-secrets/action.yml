@@ -42,7 +42,7 @@ inputs:
     required: false
     type: string
   nomad-token:
-    description: "Nomad token written to nomad.token (required when backend is gsm and target is stg)"
+    description: "Nomad token written to nomad.token when set (backend gsm, target stg; deploys that use Nomad)"
     required: false
     type: string
   ts-tag:
@@ -180,7 +180,7 @@ runs:
         echo "✅ Nomad token generated successfully"
 
     - name: Write Nomad token file
-      if: ${{ inputs.backend == 'gsm' && inputs.target == 'stg' }}
+      if: ${{ inputs.backend == 'gsm' && inputs.target == 'stg' && inputs.nomad-token != '' }}
       shell: bash
       env:
         NOMAD_TOKEN: ${{ inputs.nomad-token }}
