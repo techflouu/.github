@@ -21,9 +21,6 @@ case "$backend" in
     require gcp-project "${GCP_PROJECT:-}"
     require gcp-workload-identity-provider "${GCP_WORKLOAD_IDENTITY_PROVIDER:-}"
     require gcp-service-account "${GCP_SERVICE_ACCOUNT:-}"
-    if [ "${TARGET:-}" = "stg" ]; then
-      require nomad-token "${NOMAD_TOKEN:-}"
-    fi
     ;;
   *)
     echo "::error::read-secrets: backend must be 'vault' or 'gsm', got '$backend'."

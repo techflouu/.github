@@ -25,7 +25,7 @@ expect 1 "requires: ts-oauth-secret vault-addr vault-role." BACKEND=vault TARGET
 expect 1 "requires: vault-role." BACKEND=vault TARGET=prod TS_OAUTH_SECRET=ts VAULT_ADDR=https://vault.test
 expect 0 "valid for backend 'gsm'" BACKEND=gsm TARGET=prod "${gsm[@]}"
 expect 0 "valid for backend 'gsm'" BACKEND=gsm TARGET=stg NOMAD_TOKEN=token "${gsm[@]}"
-expect 1 "requires: nomad-token." BACKEND=gsm TARGET=stg "${gsm[@]}"
+expect 0 "valid for backend 'gsm'" BACKEND=gsm TARGET=stg "${gsm[@]}"
 expect 1 "requires: gcp-workload-identity-provider gcp-service-account." BACKEND=gsm TARGET=prod GCP_PROJECT=journeyflouu
 expect 1 "requires: gcp-project." BACKEND=gsm TARGET=prod GCP_WORKLOAD_IDENTITY_PROVIDER=p GCP_SERVICE_ACCOUNT=s
 expect 1 "backend must be 'vault' or 'gsm', got 'GSM'" BACKEND=GSM TARGET=prod "${gsm[@]}"
