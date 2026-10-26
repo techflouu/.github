@@ -41,6 +41,11 @@ inputs:
     description: "Service account the workflow impersonates (required when backend is gsm)"
     required: false
     type: string
+  gcp-audience:
+    description: "Audience of the GitHub ID token; it must be in the provider's allowed audiences (backend gsm)"
+    required: false
+    type: string
+    default: "techflouu-gcp"
   nomad-token:
     description: "Nomad token written to nomad.token when set (backend gsm, target stg; deploys that use Nomad)"
     required: false
@@ -124,6 +129,7 @@ runs:
       with:
         workload_identity_provider: ${{ inputs.gcp-workload-identity-provider }}
         service_account: ${{ inputs.gcp-service-account }}
+        audience: ${{ inputs.gcp-audience }}
 
     - name: Generate config files using demeter
       id: generated-config
