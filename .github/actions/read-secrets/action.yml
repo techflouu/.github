@@ -147,7 +147,9 @@ runs:
         npx @techflouu/demeter@latest ${{ inputs.target }} $GENERATED_CONFIG_PATH
         echo "✅ Config files generated using demeter"
 
-        # Inject RELEASE_TAG into .env
+        # Inject RELEASE_TAG into .env. demeter writes no trailing newline, so
+        # the append starts on its own line.
+        [ "$(tail -c1 "$GENERATED_CONFIG_PATH/.env" | wc -l)" -eq 0 ] && echo >> "$GENERATED_CONFIG_PATH/.env"
         echo "RELEASE_TAG=${{ inputs.release-tag }}" >> $GENERATED_CONFIG_PATH/.env
         echo "✅ RELEASE_TAG injected into .env file"
 
@@ -167,7 +169,9 @@ runs:
         DEMETER_BACKEND=gsm DEMETER_GCP_PROJECT="$GCP_PROJECT" DEMETER_STRICT=1 npx @techflouu/demeter@2 ${{ inputs.target }} $GENERATED_CONFIG_PATH
         echo "✅ Config files generated using demeter"
 
-        # Inject RELEASE_TAG into .env
+        # Inject RELEASE_TAG into .env. demeter writes no trailing newline, so
+        # the append starts on its own line.
+        [ "$(tail -c1 "$GENERATED_CONFIG_PATH/.env" | wc -l)" -eq 0 ] && echo >> "$GENERATED_CONFIG_PATH/.env"
         echo "RELEASE_TAG=${{ inputs.release-tag }}" >> $GENERATED_CONFIG_PATH/.env
         echo "✅ RELEASE_TAG injected into .env file"
 
