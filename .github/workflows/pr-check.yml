@@ -56,6 +56,17 @@ on:
         required: false
         type: boolean
         default: true
+      coverage:
+        description: >-
+          Run the test-cov-command and post the coverage report when the PR
+          title asks for it (feat, fix, perf, revert, major). Off for a
+          caller whose PR check runs only the tests a change can affect: a
+          whole-repo number from such a run is wrong, and the report step
+          fails without a coverage file. Such a caller measures coverage on
+          main instead.
+        required: false
+        type: boolean
+        default: true
     secrets:
       TS_AUTHKEY:
         required: false
@@ -136,11 +147,16 @@ jobs:
 
       - name: Check Commit Prefix
         id: check-prefix
+        env:
+          COVERAGE: ${{ inputs.coverage }}
         run: |
           TITLE="${{ github.event.pull_request.title }}"
           # Conventional-commit scope and breaking-change marker are optional:
           # feat:, feat(vig):, feat!:, and feat(vig)!: all count.
-          if [[ "$TITLE" =~ ^(feat|fix|perf|revert|major)(\([^\)]+\))?!?: ]]; then
+          if [[ "$COVERAGE" != "true" ]]; then
+            echo "run_coverage=false" >> $GITHUB_OUTPUT
+            echo "Coverage is off for this caller. Skipping coverage."
+          elif [[ "$TITLE" =~ ^(feat|fix|perf|revert|major)(\([^\)]+\))?!?: ]]; then
             echo "run_coverage=true" >> $GITHUB_OUTPUT
             echo "Commit matches primary semantic traits. Enabling coverage."
           else
@@ -224,10 +240,14 @@ jobs:
         id: check-prefix
         env:
           TITLE: ${{ github.event.pull_request.title }}
+          COVERAGE: ${{ inputs.coverage }}
         run: |
           # Conventional-commit scope and breaking-change marker are optional:
           # feat:, feat(vig):, feat!:, and feat(vig)!: all count.
-          if [[ "$TITLE" =~ ^(feat|fix|perf|revert|major)(\([^\)]+\))?!?: ]]; then
+          if [[ "$COVERAGE" != "true" ]]; then
+            echo "run_coverage=false" >> "$GITHUB_OUTPUT"
+            echo "Coverage is off for this caller. Skipping coverage."
+          elif [[ "$TITLE" =~ ^(feat|fix|perf|revert|major)(\([^\)]+\))?!?: ]]; then
             echo "run_coverage=true" >> "$GITHUB_OUTPUT"
             echo "Commit matches primary semantic traits. Enabling coverage."
           else
