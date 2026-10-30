@@ -20,7 +20,7 @@ on:
 jobs:
   create-release:
     name: Create GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ARM64]
     outputs:
       new_release_published: ${{ steps.release.outputs.new_release_published }}
       new_release_version: ${{ steps.release.outputs.new_release_version }}
@@ -83,12 +83,15 @@ jobs:
           ")
           echo "percentage=${COVERAGE}" >> $GITHUB_OUTPUT
 
+          # awk, not bc: the self-hosted runner image has no bc.
+          is_true() { awk "BEGIN { exit !($1) }"; }
+
           PREV="${{ steps.prev-coverage.outputs.percentage }}"
-          DELTA=$(echo "$COVERAGE - $PREV" | bc -l)
-          if (( $(echo "$DELTA > 0" | bc -l) )); then
+          DELTA=$(awk -v a="$COVERAGE" -v b="$PREV" 'BEGIN { print a - b }')
+          if is_true "$DELTA > 0"; then
             echo "delta=+${DELTA}" >> $GITHUB_OUTPUT
             echo "emoji=📈" >> $GITHUB_OUTPUT
-          elif (( $(echo "$DELTA < 0" | bc -l) )); then
+          elif is_true "$DELTA < 0"; then
             echo "delta=${DELTA}" >> $GITHUB_OUTPUT
             echo "emoji=📉" >> $GITHUB_OUTPUT
           else
@@ -97,10 +100,10 @@ jobs:
           fi
 
           COLOR="e05d44"
-          if (( $(echo "$COVERAGE >= 80" | bc -l) )); then COLOR="44cc11"
-          elif (( $(echo "$COVERAGE >= 60" | bc -l) )); then COLOR="97ca00"
-          elif (( $(echo "$COVERAGE >= 40" | bc -l) )); then COLOR="dfb317"
-          elif (( $(echo "$COVERAGE >= 20" | bc -l) )); then COLOR="fe7d37"
+          if is_true "$COVERAGE >= 80"; then COLOR="44cc11"
+          elif is_true "$COVERAGE >= 60"; then COLOR="97ca00"
+          elif is_true "$COVERAGE >= 40"; then COLOR="dfb317"
+          elif is_true "$COVERAGE >= 20"; then COLOR="fe7d37"
           fi
           echo "color=${COLOR}" >> $GITHUB_OUTPUT
 

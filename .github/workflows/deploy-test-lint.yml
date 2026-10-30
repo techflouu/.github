@@ -51,7 +51,7 @@ on:
 jobs:
   test-and-lint:
     name: Test and Lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ARM64]
     environment: ${{ inputs.environment }}
     steps:
       - name: Checkout
@@ -63,8 +63,9 @@ jobs:
           target: ${{ inputs.target-env }}
           artifact-name: config-files-${{ inputs.target-env }}
 
+      # The self-hosted runners are already on the tailnet.
       - name: Connect to Private Network via Tailscale
-        if: inputs.ts-network
+        if: inputs.ts-network && runner.environment != 'self-hosted'
         uses: tailscale/github-action@v3
         with:
           version: 1.84.0

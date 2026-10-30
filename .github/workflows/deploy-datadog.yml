@@ -33,7 +33,7 @@ on:
 jobs:
   datadog:
     name: Datadog Metadata & Sourcemaps
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ARM64]
     environment: ${{ inputs.environment }}
     continue-on-error: true # Make this job completely non-blocking
     steps:
@@ -48,11 +48,11 @@ jobs:
           target: ${{ inputs.target-env }}
           artifact-name: config-files-${{ inputs.target-env }}
 
+      # No `cache: npm`. The runner keeps npm's cache on a local Ceph volume.
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
-          cache: "npm"
 
       - name: Install dependencies and build
         if: inputs.upload-sourcemaps == 'true'
