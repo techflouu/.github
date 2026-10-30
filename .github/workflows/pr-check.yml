@@ -70,7 +70,7 @@ jobs:
   prepare-env:
     name: Prepare Environment
     if: inputs.secrets
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ARM64]
     outputs:
       version: ${{ steps.release.outputs.version }}
     steps:
@@ -82,13 +82,13 @@ jobs:
 
       - name: Run Release Action
         id: release
-        uses: techflouu/.github/.github/actions/release@v2
+        uses: techflouu/.github/.github/actions/release@main
         with:
           node-version: ${{ inputs.node-version }}
 
       - name: Run Read Secrets Action
         id: read-secrets
-        uses: techflouu/.github/.github/actions/read-secrets@v2
+        uses: techflouu/.github/.github/actions/read-secrets@main
         with:
           target: ${{ inputs.target-env }}
           release-tag: ${{ steps.release.outputs.version }}
@@ -109,7 +109,7 @@ jobs:
   test-and-lint:
     name: Test and Lint
     if: inputs.secrets
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ARM64]
     needs: prepare-env
     outputs:
       error_summary: ${{ steps.run-checks.outputs.error_summary }}
@@ -121,13 +121,14 @@ jobs:
           fetch-depth: 0
 
       - name: Ensure config files
-        uses: techflouu/.github/.github/actions/ensure-config-files@v2
+        uses: techflouu/.github/.github/actions/ensure-config-files@main
         with:
           target: ${{ inputs.target-env }}
           artifact-name: config-files-${{ inputs.target-env }}
 
+      # The self-hosted runners are already on the tailnet.
       - name: Connect to Private Network via Tailscale
-        if: inputs.ts-network
+        if: inputs.ts-network && runner.environment != 'self-hosted'
         uses: tailscale/github-action@v3
         with:
           version: 1.84.0
@@ -150,7 +151,7 @@ jobs:
 
       - name: Test and Lint
         id: run-checks
-        uses: techflouu/.github/.github/actions/test-and-lint@v2
+        uses: techflouu/.github/.github/actions/test-and-lint@main
         with:
           coverage: ${{ steps.check-prefix.outputs.run_coverage }}
           node-version: ${{ inputs.node-version }}
@@ -191,7 +192,7 @@ jobs:
   test-and-lint-no-secrets:
     name: Test and Lint (No Secrets)
     if: ${{ !inputs.secrets }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ARM64]
     permissions:
       contents: read
       packages: read
@@ -237,7 +238,7 @@ jobs:
 
       - name: Test and Lint
         id: run-checks
-        uses: techflouu/.github/.github/actions/test-and-lint@v2
+        uses: techflouu/.github/.github/actions/test-and-lint@main
         with:
           coverage: ${{ steps.check-prefix.outputs.run_coverage }}
           node-version: ${{ inputs.node-version }}

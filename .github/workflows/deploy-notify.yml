@@ -26,7 +26,7 @@ on:
 jobs:
   notify-discord:
     name: Discord Notification
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ARM64]
     environment: ${{ inputs.environment }}
     steps:
       - name: Discord Deploy Success Notification

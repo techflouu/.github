@@ -27,11 +27,12 @@ outputs:
 runs:
   using: "composite"
   steps:
+    # The self-hosted runners keep npm's cache on a local Ceph volume.
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
-        cache: 'npm'
+        cache: ${{ runner.environment != 'self-hosted' && 'npm' || '' }}
 
     - name: Seed default .releaserc.json if missing
       shell: bash

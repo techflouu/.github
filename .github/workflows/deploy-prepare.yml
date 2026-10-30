@@ -36,7 +36,7 @@ jobs:
   # value. The outputs come from this job, which reads no secrets.
   version:
     name: Version
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ARM64]
     outputs:
       version: ${{ steps.release.outputs.version }}
       short_sha: ${{ steps.sha.outputs.short_sha }}
@@ -58,7 +58,7 @@ jobs:
   prepare-env:
     name: Prepare Environment
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ARM64]
     environment: ${{ inputs.environment }}
     steps:
       - name: Checkout
