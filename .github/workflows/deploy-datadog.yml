@@ -73,7 +73,6 @@ jobs:
             export DD_VERSION=$(git rev-parse HEAD | cut -c1-7)
           fi
           
-          # Try to get DD_API_KEY from .env if it exists
           if [ -f .env ]; then
             export $(grep '^DD_API_KEY' .env | xargs)
             export DATADOG_API_KEY=$DD_API_KEY

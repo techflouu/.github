@@ -24,11 +24,10 @@ inputs:
     default: "npm run test:cov"
   pre-check-command:
     description: >-
-      Optional command run after `npm ci` and before lint/test start. Use for
-      setup that both lint and test depend on — generated config, fetched
-      manifests — which cannot live inside either command because the two run
-      in parallel. Empty by default, so callers that do not set it are
-      unaffected.
+      Optional command that runs after `npm ci` and before lint and test
+      start. Use it for setup that lint and test both need, such as generated
+      config or fetched manifests. Lint and test run in parallel, so this
+      setup cannot go inside either command. Empty by default.
     required: false
     default: ""
 
@@ -72,12 +71,10 @@ runs:
     - name: Run linting and tests in parallel
       id: run-checks
       run: |
-        # Start linting in background — tee to both console and file for visibility
         echo "::group::Lint Output"
         ${{ inputs.lint-command }} 2>&1 | tee lint_output.log &
         LINT_PID=$!
 
-        # Start tests in background — tee to both console and file for visibility
         echo "::group::Test Output"
         if [ "${{ inputs.coverage }}" = "true" ]; then
           ${{ inputs.test-cov-command }} 2>&1 | tee test_output.log &
@@ -86,7 +83,6 @@ runs:
         fi
         TEST_PID=$!
 
-        # Wait for both processes and capture exit codes
         wait $LINT_PID
         LINT_EXIT=$?
 
@@ -94,12 +90,10 @@ runs:
         TEST_EXIT=$?
         echo "::endgroup::"
 
-        # Always show summaries
         echo ""
         echo "📋 Lint exit code: $LINT_EXIT"
         echo "📋 Test exit code: $TEST_EXIT"
 
-        # Check if either failed
         if [ $LINT_EXIT -ne 0 ] || [ $TEST_EXIT -ne 0 ]; then
           ERROR_MSG=""
           echo ""
@@ -121,7 +115,7 @@ runs:
             echo "::endgroup::"
           fi
 
-          # Encode newlines for GITHUB_OUTPUT multi-line string
+          # A random delimiter stops a log line from ending the output value early.
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
           echo "error_summary<<$EOF" >> $GITHUB_OUTPUT
           echo -e "$ERROR_MSG" >> $GITHUB_OUTPUT

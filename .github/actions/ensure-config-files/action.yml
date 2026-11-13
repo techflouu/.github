@@ -46,12 +46,10 @@ runs:
       run: |
         CONFIG_PATH="${{ inputs.config-path }}"
         
-        # Verify generated config files
         echo "🔍 Config Verification (${{ inputs.target }}) 🔍"
         if [ -d "$CONFIG_PATH" ]; then
           ls -la "$CONFIG_PATH"
           
-          # Verify against template
           TEMPLATE_PATH="config/${{ inputs.target }}"
           if [ -d "$TEMPLATE_PATH" ]; then
             EXPECTED_FILES=$(find "$TEMPLATE_PATH" -name "*.j2" -exec basename {} .j2 \; | sort)

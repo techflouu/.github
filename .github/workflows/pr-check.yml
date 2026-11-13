@@ -40,11 +40,10 @@ on:
         default: "ci-journey"
       ts-network:
         description: >-
-          Join the tailnet in the test job too, so a test that runs against
-          a private resource (a staging database) can reach it. The prepare
-          job always joins, to reach Vault; the test job runs on a fresh
-          runner and does not, unless this is true. Off by default, so
-          callers without such tests pay nothing.
+          Join the tailnet in the test job, so a test can reach a private
+          resource such as a staging database. The prepare job always joins
+          to reach Vault. The test job runs on a fresh runner and joins only
+          when this is true. Off by default.
         required: false
         type: boolean
         default: false
@@ -289,4 +288,4 @@ jobs:
           json-summary-compare-path: ./coverage-base/coverage-summary.json
           file-coverage-mode: changes
 
-  # Discord notifications handled by Vitas bot via workflow_run webhook
+  # The Vitas bot sends the Discord notification from a workflow_run webhook.
