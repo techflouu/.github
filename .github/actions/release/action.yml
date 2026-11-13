@@ -46,7 +46,6 @@ runs:
       id: check-branch
       shell: bash
       run: |
-        # Check if current branch is configured as a release branch
         RELEASE_BRANCHES=$(jq -r '.branches[] | if type == "string" then . else .name end' .releaserc.json)
         CURRENT_BRANCH="${{ github.ref_name }}"
         
@@ -77,10 +76,8 @@ runs:
       env:
         GITHUB_TOKEN: ${{ github.token }}
 
-    # cycjimmy/semantic-release-action ends with `io.rmRF('.npmrc')` to avoid
-    # leaking npm auth it may have written — but it does not distinguish that
-    # from a committed .npmrc. Leaving the workspace short a tracked file breaks
-    # any later step that resolves a scoped registry.
+    # semantic-release-action deletes .npmrc at the end, even a committed one.
+    # A later step that resolves a scoped registry fails without it.
     - name: Restore .npmrc if semantic-release removed it
       if: always()
       shell: bash

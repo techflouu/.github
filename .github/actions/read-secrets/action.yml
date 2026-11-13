@@ -143,7 +143,6 @@ runs:
       run: |
         echo "📝 Generating config files for ${{ inputs.target }} environment..."
         
-        # Run demeter and move files to target directory
         npx @techflouu/demeter@latest ${{ inputs.target }} $GENERATED_CONFIG_PATH
         echo "✅ Config files generated using demeter"
 
