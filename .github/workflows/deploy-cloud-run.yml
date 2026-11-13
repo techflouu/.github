@@ -278,6 +278,17 @@ jobs:
           GCP_PROJECT: ${{ inputs.gcp_project }}
         run: |
           set -euo pipefail
+          # The auth step writes gha-creds-*.json into the workspace. Upload a
+          # copy of the context without it, whatever the caller's ignore files say.
+          STAGE="$RUNNER_TEMP/cloudbuild-context"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          tar -C "$BUILD_CONTEXT" --exclude='gha-creds-*.json' -cf - . | tar -C "$STAGE" -xf -
+          if [ -n "$(find "$STAGE" -name 'gha-creds-*.json' -print -quit)" ]; then
+            echo "::error::a gha-creds file is still in the staged build context"
+            exit 1
+          fi
+
           cat > /tmp/cloudbuild.yaml <<EOF
           steps:
             - name: gcr.io/cloud-builders/docker
@@ -290,7 +301,7 @@ jobs:
           gcloud builds submit \
             --project "$GCP_PROJECT" \
             --config /tmp/cloudbuild.yaml \
-            "$BUILD_CONTEXT"
+            "$STAGE"
 
       #────────────────────────────────────────────────────────────────────────
       # Deploy
